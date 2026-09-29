@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ван-Шот — Мастер</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="map-stage">
+    <div class="map-scroll">
+      <canvas id="map-canvas"></canvas>
+    </div>
+
+    <div class="overlay gm-top-bar" id="topbar-vue-root"></div>
+
+    <!-- Плавающие окна: можно перетаскивать за заголовок в любое место над картой -->
+    <div class="overlay draggable-panel panel-characters" id="characters-panel">
+      <div class="overlay-head"><span>Участники</span><span class="chevron">▾</span></div>
+      <div id="characters-panel-vue-root"></div>
+    </div>
+
+    <div class="overlay draggable-panel panel-dicelog" id="dicelog-panel">
+      <div class="overlay-head"><span>Лог бросков</span><span class="chevron">▾</span></div>
+      <div id="dicelog-panel-vue-root"></div>
+    </div>
+
+    <div class="overlay draggable-panel panel-maptools" id="maptools-panel">
+      <div class="overlay-head"><span>Карта</span><span class="chevron">▾</span></div>
+      <div id="maptools-panel-vue-root"></div>
+    </div>
+
+    <div class="overlay draggable-panel panel-sound" id="sound-panel">
+      <div class="overlay-head"><span>Звук</span><span class="chevron">▾</span></div>
+      <div id="sound-panel-vue-root"></div>
+    </div>
+
+    <div class="overlay draggable-panel panel-combat" id="combat-panel">
+      <div class="overlay-head"><span>Бой</span><span class="chevron">▾</span></div>
+      <div id="combat-panel-vue-root"></div>
+    </div>
+
+    <div class="overlay draggable-panel panel-effects" id="effects-panel">
+      <div class="overlay-head"><span>Эффекты</span><span class="chevron">▾</span></div>
+      <div id="effects-panel-vue-root"></div>
+    </div>
+
+    <div class="dice-overlay" id="dice-overlay">
+      <div class="card dice-stage" id="dice-stage"></div>
+    </div>
+
+    <div class="combat-start-overlay" id="combat-start-overlay"></div>
+
+    <div class="chat-panel" id="chat-panel-vue-root"></div>
+
+    <div class="action-rail" id="action-rail-vue-root"></div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/dice.js"></script>
+  <script src="js/combatfx.js"></script>
+  <script src="js/soundboard.js"></script>
+  <script src="js/music.js"></script>
+  <script src="js/chat.js"></script>
+  <script src="js/panelDrag.js"></script>
+  <script src="js/gm.js"></script>
+  <script src="dist/gm-panel.js"></script>
+</body>
+</html>

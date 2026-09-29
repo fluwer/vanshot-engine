@@ -1,0 +1,227 @@
+[
+  {
+    "id": "minister",
+    "name": "Министр Двигателя",
+    "role": "Антагонист",
+    "attributes": {
+      "body": 3,
+      "mind": 3,
+      "charisma": 2
+    },
+    "hp": {
+      "current": 20,
+      "max": 20
+    },
+    "energy": {
+      "current": 6,
+      "max": 6
+    },
+    "inventory": [
+      "Член"
+    ],
+    "avatar": "/avatars/presets/conductor.svg",
+    "notes": "Фанатично защищает порядок вагонов как единственный способ выживания состава.",
+    "secret": "Двигателю давно не нужен тот контроль/жертвы, которым оправдывают порядок — это удержание власти, а не необходимость.",
+    "armor": 1,
+    "visible": true,
+    "dead": false,
+    "faction": "enemy",
+    "locationId": "лес"
+  },
+  {
+    "id": "checkpoint-captain",
+    "name": "Капитан вагона-тюрьмы",
+    "role": "Промежуточный NPC (слияние групп)",
+    "attributes": {
+      "body": 2,
+      "mind": 1,
+      "charisma": 1
+    },
+    "hp": {
+      "current": 12,
+      "max": 12
+    },
+    "position": {
+      "x": 10,
+      "y": 7
+    },
+    "energy": {
+      "current": 6,
+      "max": 6
+    },
+    "inventory": [],
+    "avatar": null,
+    "notes": "Формально принимает задержанных из хвоста и группу сопровождения — точка слияния отряда. Может пойти на конфликт, если отряд поведёт себя враждебно.",
+    "secret": "",
+    "armor": 0,
+    "visible": false,
+    "dead": false,
+    "locationId": "train"
+  },
+  {
+    "id": "tail-overseer",
+    "name": "Смотритель хвоста",
+    "role": "Боевая встреча №1 — подавление бунта",
+    "attributes": {
+      "body": 3,
+      "mind": 0,
+      "charisma": 0
+    },
+    "hp": {
+      "current": 14,
+      "max": 14
+    },
+    "position": null,
+    "energy": {
+      "current": 6,
+      "max": 6
+    },
+    "inventory": [],
+    "avatar": null,
+    "notes": "Командует отрядом усмирения в дальнем хвосте. Первая силовая стычка отряда, ещё до слияния групп.",
+    "secret": "",
+    "armor": 0,
+    "visible": false,
+    "dead": false,
+    "locationId": "train"
+  },
+  {
+    "id": "middle-patrol-sergeant",
+    "name": "Сержант патруля среднего класса",
+    "role": "Боевая встреча №2 — патруль",
+    "attributes": {
+      "body": 3,
+      "mind": 1,
+      "charisma": 0
+    },
+    "hp": {
+      "current": 14,
+      "max": 14
+    },
+    "position": null,
+    "energy": {
+      "current": 6,
+      "max": 6
+    },
+    "inventory": [],
+    "avatar": null,
+    "notes": "Патруль перехватывает отряд на подходе к ночному вагону — конец первой сессии.",
+    "secret": "",
+    "armor": 0,
+    "visible": false,
+    "dead": false,
+    "locationId": "train"
+  },
+  {
+    "id": "engine-guard-captain",
+    "name": "Капитан стражи Двигателя",
+    "role": "Боевая встреча №3 — последний рубеж",
+    "attributes": {
+      "body": 3,
+      "mind": 1,
+      "charisma": 1
+    },
+    "hp": {
+      "current": 18,
+      "max": 18
+    },
+    "position": null,
+    "energy": {
+      "current": 6,
+      "max": 6
+    },
+    "inventory": [],
+    "avatar": null,
+    "notes": "Элитная стража предмоторного вагона — последнее препятствие перед Министром.",
+    "secret": "",
+    "armor": 0,
+    "visible": false,
+    "dead": false,
+    "locationId": "train"
+  },
+  {
+    "id": "night-host",
+    "name": "Хозяйка ночного вагона",
+    "role": "Интрига (без боя)",
+    "attributes": {
+      "body": 0,
+      "mind": 2,
+      "charisma": 3
+    },
+    "hp": {
+      "current": 10,
+      "max": 10
+    },
+    "position": {
+      "x": 455,
+      "y": 255
+    },
+    "energy": {
+      "current": 6,
+      "max": 6
+    },
+    "inventory": [],
+    "avatar": null,
+    "notes": "Держит салон между средним классом и элитой — знает, кто чем торгует и кто кому должен. Источник слухов и зацепок перед второй сессией.",
+    "secret": "",
+    "armor": 0,
+    "visible": true,
+    "dead": false,
+    "faction": "neutral",
+    "locationId": "train"
+  },
+  {
+    "id": "farm-overseer",
+    "name": "Смотритель фермы",
+    "role": "Твист про пайки (без боя)",
+    "attributes": {
+      "body": 1,
+      "mind": 2,
+      "charisma": 1
+    },
+    "hp": {
+      "current": 10,
+      "max": 10
+    },
+    "position": null,
+    "energy": {
+      "current": 6,
+      "max": 6
+    },
+    "inventory": [],
+    "avatar": null,
+    "notes": "Отвечает за распределение урожая между вагонами — у него есть настоящие цифры пайков, которые не бьются с официальной версией.",
+    "secret": "Знает, что часть урожая всегда шла в голову поезда сверх нормы — задолго до нынешнего кризиса.",
+    "armor": 0,
+    "visible": false,
+    "dead": false,
+    "locationId": "train"
+  },
+  {
+    "id": "elite-patron",
+    "name": "Патрон казино элиты",
+    "role": "Политика верхушки (без боя)",
+    "attributes": {
+      "body": 0,
+      "mind": 1,
+      "charisma": 3
+    },
+    "hp": {
+      "current": 10,
+      "max": 10
+    },
+    "position": null,
+    "energy": {
+      "current": 6,
+      "max": 6
+    },
+    "inventory": [],
+    "avatar": null,
+    "notes": "Влиятельный завсегдатай казино, играет в свои политические игры вокруг Министра — может стать союзником или помехой.",
+    "secret": "",
+    "armor": 0,
+    "visible": false,
+    "dead": false,
+    "locationId": "train"
+  }
+]

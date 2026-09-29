@@ -1,0 +1,14 @@
+[
+  {
+    "id": "train",
+    "name": "Поезд",
+    "gridWidth": 60,
+    "gridHeight": 40
+  },
+  {
+    "id": "лес",
+    "name": "Станция Начало",
+    "gridWidth": 60,
+    "gridHeight": 40
+  }
+]

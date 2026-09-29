@@ -1,0 +1,8 @@
+[
+  { "id": "engineer", "url": "/avatars/presets/engineer.svg", "label": "Инженер" },
+  { "id": "guard", "url": "/avatars/presets/guard.svg", "label": "Страж" },
+  { "id": "doctor", "url": "/avatars/presets/doctor.svg", "label": "Врач" },
+  { "id": "urchin", "url": "/avatars/presets/urchin.svg", "label": "Беспризорник" },
+  { "id": "conductor", "url": "/avatars/presets/conductor.svg", "label": "Машинист" },
+  { "id": "passenger", "url": "/avatars/presets/passenger.svg", "label": "Пассажир" }
+]

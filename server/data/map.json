@@ -1,0 +1,18 @@
+{
+  "cellSize": 16,
+  "rooms": [
+    { "id": "tail3", "title": "Хвост — дно", "width": 5, "height": 4 },
+    { "id": "tail2", "title": "Хвост — трущобы", "width": 5, "height": 4 },
+    { "id": "tail1", "title": "Хвост — граница", "width": 4, "height": 4 },
+    { "id": "checkpoint", "title": "Вагон-тюрьма", "width": 5, "height": 3 },
+    { "id": "cargo", "title": "Грузовой вагон", "width": 4, "height": 3 },
+    { "id": "middle1", "title": "Средний класс — I", "width": 5, "height": 3 },
+    { "id": "middle2", "title": "Средний класс — II", "width": 5, "height": 3 },
+    { "id": "night", "title": "Ночной вагон", "width": 5, "height": 4 },
+    { "id": "farm", "title": "Вагон-ферма", "width": 6, "height": 4 },
+    { "id": "elite1", "title": "Вагон элиты — приёмная", "width": 4, "height": 4 },
+    { "id": "elite2", "title": "Вагон элиты — казино", "width": 6, "height": 4 },
+    { "id": "premotor", "title": "Предмоторный вагон", "width": 5, "height": 4 },
+    { "id": "engine", "title": "Двигатель", "width": 5, "height": 5 }
+  ]
+}

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Ван-Шот — Игрок</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <div id="join-form" class="card join-card">
+    <div id="join-form-vue-root"></div>
+  </div>
+
+  <div id="app" class="map-stage hidden">
+    <div class="map-scroll">
+      <canvas id="map-canvas"></canvas>
+    </div>
+
+    <button id="leave-session-btn" class="fog-btn leave-session-btn" title="Забыть сессию на этом устройстве">⎋ Выход</button>
+
+    <div class="overlay draggable-panel party-panel" id="party-panel">
+      <div class="overlay-head"><span>Отряд</span><span class="overlay-head-controls"></span></div>
+      <div id="party-panel-vue-root"></div>
+    </div>
+
+    <div class="overlay draggable-panel dicelog-panel" id="dicelog-panel">
+      <div class="overlay-head"><span>Лог бросков</span><span class="overlay-head-controls"></span></div>
+      <div id="dicelog-panel-vue-root"></div>
+    </div>
+
+    <div class="overlay draggable-panel soundboard-panel" id="soundboard-panel">
+      <div class="overlay-head"><span>Саундборд</span><span class="overlay-head-controls"></span></div>
+      <div id="soundboard-panel-vue-root"></div>
+    </div>
+
+    <div class="overlay draggable-panel music-panel" id="music-panel">
+      <div class="overlay-head"><span>Музыка</span><span class="overlay-head-controls"></span></div>
+      <div id="music-panel-vue-root"></div>
+    </div>
+
+    <div class="overlay draggable-panel combat-panel" id="combat-indicator-panel">
+      <div class="overlay-head"><span>Бой</span><span class="overlay-head-controls"></span></div>
+      <div id="combat-indicator-vue-root"></div>
+    </div>
+
+    <div class="overlay draggable-panel drawing-panel" id="drawing-panel">
+      <div class="overlay-head"><span>Рисование</span><span class="overlay-head-controls"></span></div>
+      <div id="drawing-panel-vue-root"></div>
+    </div>
+
+    <div class="overlay draggable-panel effects-panel" id="effects-panel">
+      <div class="overlay-head"><span>Эффекты</span><span class="overlay-head-controls"></span></div>
+      <div id="effects-panel-vue-root"></div>
+    </div>
+
+    <div class="dice-overlay" id="dice-overlay">
+      <div class="card dice-stage" id="dice-stage"></div>
+    </div>
+
+    <div class="combat-start-overlay" id="combat-start-overlay"></div>
+
+    <div class="chat-panel" id="chat-panel-vue-root"></div>
+
+    <!-- Нижняя панель действий -->
+    <div class="action-rail" id="action-rail-vue-root"></div>
+
+    <div class="bottom-bar">
+      <button class="drawer-btn" data-drawer="sheet-drawer">Персонаж ▲</button>
+      <button class="drawer-btn" data-drawer="skills-drawer">Навыки/Инвентарь ▲</button>
+      <button class="drawer-btn" data-drawer="tools-drawer">Инструменты ▲</button>
+    </div>
+
+    <!-- Выдвижные ящики -->
+    <div class="drawer" id="sheet-drawer">
+      <div id="sheet-drawer-vue-root"></div>
+    </div>
+
+    <div class="drawer" id="skills-drawer">
+      <div class="drawer-head"><h2>Навыки и инвентарь</h2><button class="drawer-close" data-close="skills-drawer">✕</button></div>
+      <div id="skills-drawer-vue-root"></div>
+    </div>
+
+    <div class="drawer" id="tools-drawer">
+      <div class="drawer-head"><h2>Окна</h2><button class="drawer-close" data-close="tools-drawer">✕</button></div>
+      <div class="tools-panel-list" id="tools-drawer-list"></div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/dice.js"></script>
+  <script src="js/combatfx.js"></script>
+  <script src="js/soundboard.js"></script>
+  <script src="js/music.js"></script>
+  <script src="js/chat.js"></script>
+  <script src="js/panelDrag.js"></script>
+  <script src="js/player.js"></script>
+  <script src="dist/player-panel.js"></script>
+</body>
+</html>
