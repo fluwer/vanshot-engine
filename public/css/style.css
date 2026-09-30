@@ -96,6 +96,7 @@ input, select {
   overflow-y: auto;
   font-size: 13px;
 }
+.log-clear-btn { display: block; margin: 0 0 6px auto; }
 .log-entry { padding: 4px 0; border-bottom: 1px solid #2a2f3a; }
 .log-entry.crit-success { color: #7be07e; }
 .log-entry.crit-fail { color: #e07b7b; }

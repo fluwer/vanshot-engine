@@ -75,6 +75,12 @@ io.on('connection', (socket) => {
     broadcastState();
   });
 
+  socket.on('dicelog:clear', () => {
+    if (socket.data.role !== 'gm') return;
+    gameState.clearDiceLog();
+    broadcastState();
+  });
+
   // HP/Энергия/Решимость меняет только мастер — у игрока ручного управления нет.
   socket.on('hp:update', ({ characterId, delta }) => {
     if (socket.data.role !== 'gm') return;
@@ -423,6 +429,12 @@ io.on('connection', (socket) => {
     }
 
     gameState.addChatMessage(socket.data.name, text, 'user');
+    broadcastState();
+  });
+
+  socket.on('chat:clear', () => {
+    if (socket.data.role !== 'gm') return;
+    gameState.clearChat();
     broadcastState();
   });
 

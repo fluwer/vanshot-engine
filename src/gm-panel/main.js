@@ -43,7 +43,7 @@ window.charactersPanelApp = {
 
 // ---- Лог бросков ----
 const diceLogStore = reactive({ diceLog: [] });
-createApp(DiceLogPanel, { store: diceLogStore }).mount('#dicelog-panel-vue-root');
+createApp(DiceLogPanel, { store: diceLogStore, bridge }).mount('#dicelog-panel-vue-root');
 window.diceLogPanelApp = {
   updateState(diceLog) {
     diceLogStore.diceLog = diceLog;
@@ -113,7 +113,7 @@ window.dcControlsPanelApp = {
 createApp(GmAttributesPanel, { store, bridge }).mount('#action-rail-vue-root');
 
 // ---- Чат ----
-createApp(ChatPanel, { bridge }).mount('#chat-panel-vue-root');
+createApp(ChatPanel, { bridge, gmControls: true }).mount('#chat-panel-vue-root');
 
 // ---- Спецэффекты (дым/огонь/фейерверк) ----
 createApp(EffectsPanel, { bridge }).mount('#effects-panel-vue-root');

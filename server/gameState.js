@@ -815,6 +815,10 @@ function rollDice(characterId, attribute, spendResolve, label) {
   return entry;
 }
 
+function clearDiceLog() {
+  state.diceLog = [];
+}
+
 // Разбирает выражение кубика для команды чата /roll — независимо от
 // rollDice() (тот — d20+атрибут+DC для персонажей). Поддерживает:
 // "10" (= 1d10, как в примере "/roll 10"), "2d6", "2d6+3", "2d6-1".
@@ -1201,6 +1205,15 @@ function addChatMessage(author, text, kind = 'user') {
   return entry;
 }
 
+function clearChat() {
+  state.chat = [];
+  try {
+    fs.writeFileSync(CHAT_FILE, JSON.stringify(state.chat));
+  } catch (err) {
+    console.warn('Не удалось сохранить chat.json:', err.message);
+  }
+}
+
 // Снимок runtime-состояния (ресурсы/позиции персонажей и NPC, бой, DC,
 // лог бросков) — персистится в runtime.json, чтобы пережить
 // перезапуск сервера. Вызывается из broadcastState() после каждой мутации.
@@ -1327,6 +1340,7 @@ module.exports = {
   forceMoveNpc,
   getReachableCells,
   rollDice,
+  clearDiceLog,
   parseDiceExpression,
   formatFreeRoll,
   setFog,
@@ -1347,6 +1361,7 @@ module.exports = {
   undoLastDrawing,
   clearDrawings,
   addChatMessage,
+  clearChat,
   startCombat,
   endCombat,
   nextTurn,
