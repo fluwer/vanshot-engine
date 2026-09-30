@@ -1,0 +1,11 @@
+services:
+  vanshot:
+    build: .
+    container_name: vanshot
+    restart: unless-stopped
+    mem_limit: 256m
+    mem_reservation: 96m
+    ports:
+      - "127.0.0.1:3002:3000"
+    volumes:
+      - ./data:/app/server/data
