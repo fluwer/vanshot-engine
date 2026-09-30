@@ -1262,8 +1262,13 @@ function getPublicState() {
     // Музыка — общее состояние воспроизведения, видно всем (у каждого клиента
     // своя громкость, но трек и позиция синхронны).
     music: state.music,
-    // Игрокам видны только NPC активной локации, которых мастер явно сделал видимыми.
-    npcs: npcs.filter((n) => n.visible && n.position && n.locationId === activeId),
+    // Игрокам видны только NPC активной локации, которых мастер явно сделал
+    // видимыми — и то без notes/secret: это заметки только для ГМ (см.
+    // NpcInfoDialog.vue, поля «Заметки»/«Секрет»), их не фильтровали по
+    // аналогии с characters.code, хотя должны были.
+    npcs: npcs
+      .filter((n) => n.visible && n.position && n.locationId === activeId)
+      .map(({ notes, secret, ...rest }) => rest),
   };
 }
 
