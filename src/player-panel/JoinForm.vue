@@ -62,7 +62,7 @@ function join() {
   // characterId мог остаться в модели от предзаполнения сессии (см.
   // onMounted) — на случай, если за это время его заняли, подстрахуемся
   // и тут.
-  const selected = store.characters.find((c) => c.id === cid);
+  const selected = props.store.characters.find((c) => c.id === cid);
   if (selected && selected.claimedBy) {
     error.value = `Персонаж уже занят: ${selected.claimedBy}`;
     return;
