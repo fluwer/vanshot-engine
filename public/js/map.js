@@ -31,6 +31,17 @@ const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
 const FOG_CELL = 24;
 const FOG_HATCH_TILE = 8; // делит FOG_CELL нацело (24/8=3) — плитка узора без обрезков
 const FOG_FRAME_PAD = FOG_CELL * 4; // запас вокруг картинок/поезда при «Скрыть всё»
+const CAMERA_CONTENT_MARGIN = 800;  // запас (мировые px) вокруг содержимого карты, за который камера не уезжает
+
+// Анимация ходьбы токена (чисто клиентская: сервер двигает токен мгновенно,
+// путь считается из смены позиции между двумя state — см. syncTokenAnimations).
+const WALK_STEP_MS = 120;     // время на одну клетку
+const WALK_MAX_MS = 1000;     // потолок на весь путь: на длинных дистанциях шаг короче
+const WALK_MAX_STEPS = 40;    // путь длиннее — телепорт ГМ, без анимации
+const WALK_BOB_PX = 2;        // высота подпрыгивания токена на шаге (мировые px)
+const WALK_FX_MAX = 300;      // предел частиц ходьбы одновременно (старые отбрасываем)
+const WALK_DUST_MS = 420;     // жизнь облачка пыли
+const WALK_PRINT_MS = 1100;   // жизнь следа
 
 function createMapController({ canvas, role, myCharacterId }) {
   const ctx = canvas.getContext('2d');
@@ -80,6 +91,7 @@ function createMapController({ canvas, role, myCharacterId }) {
   let dragStart = null;
   let dragMoved = false;
   let suppressTap = false;
+  let panButton = null; // кнопка мыши, начавшая текущий жест панорамирования (null — тач/перо/нет жеста)
   let pinchStartDist = null;
   let pinchStartZoom = null;
 
@@ -203,16 +215,30 @@ function createMapController({ canvas, role, myCharacterId }) {
   let erasedThisGesture = null;    // Set<id> — не слать повторный erase за один жест
   let drawAddHandler = null;
   let drawEraseHandler = null;
+  let drawUndoHandler = null;      // вызывается по клику ПКМ (без движения) в режиме рисования
 
   // --- Спецэффекты (дым/огонь/фейерверк) -----------------------------------
   // vfxPlaceMode — как drawMode, доступен ОБЕИМ ролям, но НЕ гасится после
   // одного клика (можно поставить несколько эффектов подряд) — выключается
   // повторным нажатием той же кнопки в EffectsPanel.vue.
-  let vfxPlaceMode = null;   // null | 'smoke' | 'fire' | 'firework'
+  let vfxPlaceMode = null;   // null | 'smoke' | 'fire' | 'firework' | 'explosion' | 'lightning' | 'magic'
   let vfxPlaceHandler = null;
   let activeEffects = [];    // [{ type, x, y, startedAt, duration }] — только в памяти, не персистится
-  let vfxRafId = null;
-  const VFX_DURATION = { smoke: 2200, fire: 1800, firework: 1200 };
+  let animRafId = null;      // единый rAF-цикл: спецэффекты + ходьба токенов + частицы ходьбы
+  const VFX_DURATION = { smoke: 2200, fire: 1800, firework: 1200, explosion: 1100, lightning: 600, magic: 2000 };
+
+  // --- Ходьба токенов ------------------------------------------------------
+  // Ключи с префиксом ('c:'+id / 'n:'+id): id персонажей и NPC в коде не
+  // гарантированно уникальны между собой.
+  const tokenKey = (type, id) => (type === 'npc' ? 'n:' : 'c:') + id;
+  // Логические позиции токенов из ПРОШЛОГО state. Пересобирается целиком на
+  // каждый updateState (не накапливается) — иначе NPC, пропавший и вернувшийся,
+  // получил бы анимацию из старой клетки.
+  const lastLogical = new Map();      // key -> { x, y }
+  const tokenAnims = new Map();       // key -> { path: [{x,y}], cum: [число клеток от старта], total, startedAt, stepMs }
+  let walkFx = [];                    // [{ kind: 'dust'|'print', x, y, startedAt, duration, seed, angle, side, ownerKey, isNpc, faint }]
+  let skipNextAnim = false;           // следующий state применить без анимации (реконнект)
+  const reduceMotionQuery = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
 
   // Детерминированный псевдослучайный сдвиг по seed — частицы должны быть
   // стабильны между кадрами (позиция считается заново каждый draw() из t,
@@ -225,15 +251,146 @@ function createMapController({ canvas, role, myCharacterId }) {
   function playEffect(type, x, y) {
     const duration = VFX_DURATION[type] || 1500;
     activeEffects.push({ type, x, y, startedAt: performance.now(), duration });
-    if (vfxRafId === null) vfxLoop();
+    startAnimLoop();
   }
 
-  function vfxLoop() {
+  // Единый цикл анимации: сначала убираем истёкшее (эффекты, частицы ходьбы,
+  // завершённые твины токенов), потом draw() — финальный кадр сам покажет
+  // токены на логических позициях без «щелчка». Один rAF на всё, иначе
+  // совпавшие эффект и ходьба давали бы два draw() за кадр. Когда анимировать
+  // нечего — цикл останавливается и CPU не жжёт.
+  function animLoop() {
     const now = performance.now();
     activeEffects = activeEffects.filter((fx) => now - fx.startedAt < fx.duration);
+    walkFx = walkFx.filter((fx) => now < fx.startedAt + fx.duration);
+    tokenAnims.forEach((a, key) => {
+      if (now - a.startedAt >= a.total * a.stepMs) tokenAnims.delete(key);
+    });
     draw();
-    vfxRafId = activeEffects.length ? requestAnimationFrame(vfxLoop) : null;
+    animRafId = (activeEffects.length || walkFx.length || tokenAnims.size)
+      ? requestAnimationFrame(animLoop)
+      : null;
   }
+
+  function startAnimLoop() {
+    if (animRafId === null) animLoop();
+  }
+
+  // 4-связная «растеризованная линия» (walk_grid): длина пути = манхэттенскому
+  // расстоянию (стоимость хода в бою) и детерминирована от (from, to) — у ГМ и
+  // всех игроков маршрут одинаковый без синхронизации по сети.
+  function buildStepPath(from, to) {
+    const path = [{ x: from.x, y: from.y }];
+    const nx = Math.abs(to.x - from.x);
+    const ny = Math.abs(to.y - from.y);
+    const sx = Math.sign(to.x - from.x);
+    const sy = Math.sign(to.y - from.y);
+    let x = from.x;
+    let y = from.y;
+    for (let ix = 0, iy = 0; ix < nx || iy < ny;) {
+      if ((0.5 + ix) / nx < (0.5 + iy) / ny) { x += sx; ix++; } else { y += sy; iy++; }
+      path.push({ x, y });
+    }
+    return path;
+  }
+
+  // Текущая отображаемая поза токена: позиция в клетках (дробная) и высота
+  // подпрыгивания. Нет анимации — логическая позиция.
+  function getTokenPose(key, position, now) {
+    const a = tokenAnims.get(key);
+    if (!a) return { x: position.x, y: position.y, lift: 0 };
+    const dist = (now - a.startedAt) / a.stepMs;
+    if (dist >= a.total) return { x: position.x, y: position.y, lift: 0 };
+    let i = 1;
+    while (i < a.cum.length - 1 && a.cum[i] <= dist) i++;
+    const segLen = a.cum[i] - a.cum[i - 1];
+    const t = segLen > 0 ? clamp((dist - a.cum[i - 1]) / segLen, 0, 1) : 1;
+    const p0 = a.path[i - 1];
+    const p1 = a.path[i];
+    return {
+      x: p0.x + (p1.x - p0.x) * t,
+      y: p0.y + (p1.y - p0.y) * t,
+      lift: Math.sin(Math.PI * (dist - Math.floor(dist))) * WALK_BOB_PX,
+    };
+  }
+
+  // Запускает анимацию ходьбы токена from -> to. Если токен уже идёт, новый
+  // путь стартует с его текущей отображаемой позиции (без скачка).
+  function startTokenAnim(key, isNpc, faint, from, to, now) {
+    const cellSize = currentState.map.cellSize;
+    const running = tokenAnims.get(key);
+    const runningDist = running ? (now - running.startedAt) / running.stepMs : Infinity;
+    let path;
+    if (running && runningDist < running.total) {
+      // Токен дойдёт до ближайшей впереди точки решётки (без разворота на
+      // месте), дальше — новый путь к цели: ломаная остаётся осевой, скачка нет.
+      const pose = getTokenPose(key, from, now);
+      let i = 1;
+      while (i < running.cum.length - 1 && running.cum[i] <= runningDist) i++;
+      path = [{ x: pose.x, y: pose.y }, ...buildStepPath(running.path[i], to)];
+      // Ещё не начавшиеся частицы старого маршрута больше не нужны.
+      walkFx = walkFx.filter((fx) => fx.ownerKey !== key || fx.startedAt <= now);
+    } else {
+      path = buildStepPath(from, to);
+    }
+    // Длина сегментов в клетках; шаги по решётке ровно по 1, первый дробный может быть короче.
+    const cum = [0];
+    for (let i = 1; i < path.length; i++) {
+      cum.push(cum[i - 1] + Math.abs(path[i].x - path[i - 1].x) + Math.abs(path[i].y - path[i - 1].y));
+    }
+    const total = cum[cum.length - 1];
+    if (total <= 0) { tokenAnims.delete(key); return; }
+    if (total > WALK_MAX_STEPS) { tokenAnims.delete(key); return; } // телепорт — мгновенно
+    const stepMs = Math.min(WALK_STEP_MS, WALK_MAX_MS / total);
+    tokenAnims.set(key, { path, cum, total, startedAt: now, stepMs });
+
+    // Частицы заранее, с будущим startedAt (как delay у дыма): пыль и след в
+    // клетке, которую токен покидает, в момент отрыва ноги.
+    const seedBase = now + (isNpc ? 11 : 3);
+    for (let i = 0; i < path.length - 1; i++) {
+      const a = path[i];
+      const b = path[i + 1];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      if (dx === 0 && dy === 0) continue;
+      const angle = Math.atan2(dy, dx);
+      const startedAt = now + (cum[i] + 0.25) * stepMs;
+      const fx = { x: (a.x + 0.5) * cellSize, y: (a.y + 0.5) * cellSize + 20, startedAt, seed: seedBase + i * 17, angle, ownerKey: key, isNpc, faint };
+      walkFx.push({ ...fx, kind: 'dust', duration: WALK_DUST_MS });
+      walkFx.push({ ...fx, kind: 'print', duration: WALK_PRINT_MS, side: i % 2 === 0 ? 1 : -1 });
+    }
+    if (walkFx.length > WALK_FX_MAX) walkFx = walkFx.slice(walkFx.length - WALK_FX_MAX);
+  }
+
+  // Сравнивает позиции токенов с прошлым state и запускает анимацию для
+  // сместившихся. skip — применить без анимации (первый state, смена локации,
+  // фоновая вкладка, reduced-motion, реконнект).
+  function syncTokenAnimations(state, skip) {
+    const now = performance.now();
+    const next = new Map();
+    const consider = (key, entity, isNpc) => {
+      if (!entity.position) return;
+      const to = { x: entity.position.x, y: entity.position.y };
+      next.set(key, to);
+      const from = lastLogical.get(key);
+      if (!from || (from.x === to.x && from.y === to.y)) return;
+      if (skip || entity.dead) { tokenAnims.delete(key); return; }
+      startTokenAnim(key, isNpc, role === 'gm' && isNpc && !entity.visible, from, to, now);
+    };
+    (state.characters || []).forEach((c) => consider(tokenKey('character', c.id), c, false));
+    (state.npcs || [])
+      .filter((n) => n.locationId === state.activeLocationId)
+      .forEach((n) => consider(tokenKey('npc', n.id), n, true));
+    lastLogical.clear();
+    next.forEach((pos, key) => lastLogical.set(key, pos));
+    if (skip) { tokenAnims.clear(); walkFx = []; }
+  }
+
+  // Вкладка ушла в фон — rAF там замирает; не копим анимации, а завершаем их,
+  // чтобы по возвращении токены стояли на своих клетках.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { tokenAnims.clear(); walkFx = []; }
+  });
 
   function drawSmoke(fx, t) {
     const n = 6;
@@ -291,6 +448,144 @@ function createMapController({ canvas, role, myCharacterId }) {
     }
   }
 
+  // Новые эффекты меняют глобальные стили канваса (lineDash, composite,
+  // трансформ) — поэтому, в отличие от дыма/огня/фейерверка выше, каждый
+  // обёрнут в save()/restore(), иначе стиль утечёт в слои тумана и токенов.
+
+  // Взрыв: вспышка → ударная волна → осколки → тёмный дым.
+  function drawExplosion(fx, t) {
+    ctx.save();
+    const flashT = Math.min(1, t / 0.35);
+    if (flashT < 1) {
+      const r = 10 + flashT * 34;
+      const grad = ctx.createRadialGradient(fx.x, fx.y, 0, fx.x, fx.y, r);
+      grad.addColorStop(0, `rgba(255,255,230,${(1 - flashT) * 0.95})`);
+      grad.addColorStop(0.45, `rgba(255,170,40,${(1 - flashT) * 0.8})`);
+      grad.addColorStop(1, 'rgba(200,50,10,0)');
+      ctx.beginPath();
+      ctx.fillStyle = grad;
+      ctx.arc(fx.x, fx.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    const ease = 1 - Math.pow(1 - t, 3); // ease-out
+    ctx.beginPath();
+    ctx.strokeStyle = `rgba(255,210,140,${(1 - t) * 0.8})`;
+    ctx.lineWidth = Math.max(0.5, 4 * (1 - t));
+    ctx.arc(fx.x, fx.y, 6 + ease * 48, 0, Math.PI * 2);
+    ctx.stroke();
+    for (let i = 0; i < 12; i++) {
+      const seed = fx.startedAt + i * 31;
+      const angle = prand(seed) * Math.PI * 2;
+      const dist = (28 + prand(seed + 1) * 26) * ease;
+      const size = (1.5 + prand(seed + 2) * 1.5) * (1 - t * 0.5);
+      ctx.beginPath();
+      ctx.fillStyle = `rgba(255,${120 + Math.floor(prand(seed + 3) * 100)},40,${1 - t})`;
+      ctx.arc(fx.x + Math.cos(angle) * dist, fx.y + Math.sin(angle) * dist, size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (t > 0.3) {
+      const pt = (t - 0.3) / 0.7;
+      ctx.beginPath();
+      ctx.fillStyle = `rgba(60,60,60,${(1 - pt) * 0.45})`;
+      ctx.arc(fx.x, fx.y - pt * 18, 8 + pt * 14, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // Молния: три коротких вспышки, у каждой своя форма разряда (сид от номера
+  // вспышки, внутри вспышки форма стабильна), в конце — свечение в точке удара.
+  function drawLightning(fx, t) {
+    const windows = [[0, 0.14], [0.22, 0.4], [0.5, 0.62]];
+    const wi = windows.findIndex(([a, b]) => t >= a && t <= b);
+    if (wi === -1) return;
+    const alpha = 1 - t * 0.5;
+    const seedBase = fx.startedAt + wi * 131;
+    const height = 130;
+    const segs = 12;
+    const bolt = [];
+    for (let i = 0; i <= segs; i++) {
+      const k = i / segs;
+      const jitter = i === segs ? 0 : (prand(seedBase + i) - 0.5) * 22 * (1 - k * 0.3);
+      bolt.push({ x: fx.x + (1 - k) * 20 + jitter, y: fx.y - height * (1 - k) });
+    }
+    // Ответвление от середины разряда — короткая ломаная в сторону.
+    const branch = [];
+    const from = bolt[6];
+    const dir = prand(seedBase + 50) < 0.5 ? -1 : 1;
+    for (let i = 0; i <= 4; i++) {
+      branch.push({
+        x: from.x + dir * i * 7 + (prand(seedBase + 60 + i) - 0.5) * 8,
+        y: from.y + i * 9,
+      });
+    }
+    ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.globalCompositeOperation = 'lighter';
+    const glow = ctx.createRadialGradient(fx.x, fx.y, 0, fx.x, fx.y, 26);
+    glow.addColorStop(0, `rgba(200,225,255,${0.8 * alpha})`);
+    glow.addColorStop(1, 'rgba(120,170,255,0)');
+    ctx.beginPath();
+    ctx.fillStyle = glow;
+    ctx.arc(fx.x, fx.y, 26, 0, Math.PI * 2);
+    ctx.fill();
+    [[bolt, 1], [branch, 0.6]].forEach(([pts, k]) => {
+      [[`rgba(120,170,255,${0.45 * alpha})`, 7 * k], [`rgba(255,255,255,${0.95 * alpha})`, 2.2 * k]].forEach(([color, width]) => {
+        ctx.beginPath();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
+        pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+        ctx.stroke();
+      });
+    });
+    ctx.restore();
+  }
+
+  // Магия: вращающиеся рунные кольца + светящиеся искры, поднимающиеся вверх.
+  function drawMagic(fx, t) {
+    const env = Math.sin(Math.PI * t); // нарастание и затухание: 0 → 1 → 0
+    const R = 14 + 20 * Math.min(1, t * 3);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    const glow = ctx.createRadialGradient(fx.x, fx.y, 0, fx.x, fx.y, R);
+    glow.addColorStop(0, `rgba(180,140,255,${env * 0.45})`);
+    glow.addColorStop(1, 'rgba(120,200,255,0)');
+    ctx.beginPath();
+    ctx.fillStyle = glow;
+    ctx.arc(fx.x, fx.y, R, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.save();
+    ctx.translate(fx.x, fx.y);
+    ctx.rotate(t * Math.PI * 2);
+    ctx.setLineDash([5, 4]);
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = `rgba(190,140,255,${env * 0.9})`;
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.rotate(-t * Math.PI * 4);
+    ctx.setLineDash([2, 5]);
+    ctx.strokeStyle = `rgba(120,200,255,${env * 0.8})`;
+    ctx.beginPath();
+    ctx.arc(0, 0, R * 0.62, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    for (let i = 0; i < 14; i++) {
+      const seed = fx.startedAt + i * 41;
+      const angle = prand(seed) * Math.PI * 2;
+      const rad = (0.3 + 0.7 * prand(seed + 1)) * R;
+      const pt = (t * 1.4 + prand(seed + 2)) % 1; // у каждой искры своя фаза подъёма
+      const px = fx.x + Math.cos(angle) * rad + Math.sin(pt * 6 + seed) * 3;
+      const py = fx.y + Math.sin(angle) * rad * 0.6 - pt * 32;
+      ctx.beginPath();
+      ctx.fillStyle = `hsla(${200 + Math.floor(prand(seed + 3) * 100)}, 90%, 70%, ${Math.sin(Math.PI * pt) * env})`;
+      ctx.arc(px, py, 1.2 + prand(seed + 4) * 1.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   // Рисует все активные эффекты — вызывается внутри draw(), см. комментарий
   // там про порядок слоёв (под туманом, но над картинками/сеткой/reachable).
   function drawEffects() {
@@ -301,6 +596,62 @@ function createMapController({ canvas, role, myCharacterId }) {
       if (fx.type === 'smoke') drawSmoke(fx, t);
       else if (fx.type === 'fire') drawFire(fx, t, now);
       else if (fx.type === 'firework') drawFirework(fx, t);
+      else if (fx.type === 'explosion') drawExplosion(fx, t);
+      else if (fx.type === 'lightning') drawLightning(fx, t);
+      else if (fx.type === 'magic') drawMagic(fx, t);
+    });
+  }
+
+  // Следы ходьбы (пыль и отпечатки) — слой ВЫШЕ тумана и ниже токенов: токены
+  // видны поверх тумана, значит и их следы. Положение частицы считается заново
+  // из t на каждый кадр (prand(seed) стабильна между кадрами, как у
+  // спецэффектов выше). Игроку частицы NPC в тумане не рисуем — иначе следы
+  // выдали бы скрытого NPC; у ГМ следы скрытого NPC приглушены (faint), как и сам токен.
+  function drawWalkFx() {
+    if (!walkFx.length) return;
+    const now = performance.now();
+    walkFx.forEach((fx) => {
+      if (now < fx.startedAt) return; // момент шага ещё не наступил
+      if (role === 'player' && fx.isNpc && isPositionFogged(fx.x, fx.y)) return;
+      const t = Math.min(1, (now - fx.startedAt) / fx.duration);
+      const k = fx.faint ? 0.45 : 1;
+      ctx.save();
+      if (fx.kind === 'dust') {
+        // Два облачка: сносит назад против хода, растут и тают.
+        const back = fx.angle + Math.PI;
+        for (let j = 0; j < 2; j++) {
+          const s = fx.seed + j * 5;
+          const drift = (2 + prand(s) * 3) * t;
+          const spread = (prand(s + 1) - 0.5) * 4 * t;
+          const px = fx.x + Math.cos(back) * drift - Math.sin(back) * spread;
+          const py = fx.y + Math.sin(back) * drift + Math.cos(back) * spread - t * 2;
+          // Облачко сносит от точки рождения — туман проверяем и по его нынешней позиции.
+          if (role === 'player' && fx.isNpc && isPositionFogged(px, py)) continue;
+          ctx.globalAlpha = (1 - t) * 0.35 * k;
+          ctx.fillStyle = 'rgb(200,192,176)';
+          ctx.beginPath();
+          ctx.arc(px, py, 1.2 + t * 2.3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        // След: светлый отпечаток с тонкой тёмной обводкой — читается и на
+        // тёмном, и на светлом фоне; левая/правая нога смещены вбок от курса.
+        const side = Math.PI / 2;
+        const px = fx.x + Math.cos(fx.angle + side) * 2.2 * fx.side;
+        const py = fx.y + Math.sin(fx.angle + side) * 2.2 * fx.side;
+        if (role === 'player' && fx.isNpc && isPositionFogged(px, py)) { ctx.restore(); return; }
+        ctx.translate(px, py);
+        ctx.rotate(fx.angle);
+        ctx.globalAlpha = Math.min(1, (1 - t) * 2) * 0.5 * k; // первая половина жизни — без затухания
+        ctx.fillStyle = 'rgb(235,230,215)';
+        ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+        ctx.lineWidth = 0.6;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 2.2, 1.4, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.restore();
     });
   }
 
@@ -421,19 +772,21 @@ function createMapController({ canvas, role, myCharacterId }) {
 
   // Едва заметная фоновая сетка клеток — видна и ГМ, и игрокам: помогает
   // на глаз оценить расстояние в клетках и подгонять картинки под сетку.
-  // Диапазон линий ограничен и видимым вьюпортом, и границами карты, чтобы
-  // не рисовать тысячи линий на сетке 1000x500.
+  // Сетка бесконечная; число линий ограничено видимым вьюпортом, так что
+  // тысячи линий не рисуются даже при сильном отдалении.
   const GRID_COLOR = 'rgba(255,255,255,0.1)';
   function drawGrid() {
     if (!currentState || !currentState.map) return;
-    const { cellSize, gridWidth, gridHeight } = currentState.map;
+    // Сетка бесконечная — рисуем линии по всему видимому окну (а не только
+    // в пределах gridWidth×gridHeight), число линий ограничено вьюпортом.
+    const { cellSize } = currentState.map;
     const viewMin = screenToWorld(0, 0);
     const viewMax = screenToWorld(canvas.width, canvas.height);
     const yOff = 20;
-    const i0 = Math.max(0, Math.floor(viewMin.x / cellSize) - 1);
-    const i1 = Math.min(gridWidth, Math.ceil(viewMax.x / cellSize) + 1);
-    const j0 = Math.max(0, Math.floor((viewMin.y - yOff) / cellSize) - 1);
-    const j1 = Math.min(gridHeight, Math.ceil((viewMax.y - yOff) / cellSize) + 1);
+    const i0 = Math.floor(viewMin.x / cellSize) - 1;
+    const i1 = Math.ceil(viewMax.x / cellSize) + 1;
+    const j0 = Math.floor((viewMin.y - yOff) / cellSize) - 1;
+    const j1 = Math.ceil((viewMax.y - yOff) / cellSize) + 1;
     ctx.save();
     ctx.strokeStyle = GRID_COLOR;
     ctx.lineWidth = 1 / camera.zoom; // толщина линии не меняется от зума
@@ -516,6 +869,14 @@ function createMapController({ canvas, role, myCharacterId }) {
     draw();
   }
 
+  // Снять выбор (кто бросает кубик / кого двигает следующий тап) — только если
+  // он есть, чтобы глобальный сброс «по любому клику» не дёргал
+  // requestReachable() и перерисовку на каждое нажатие.
+  function clearSelection() {
+    if (!selectedTarget) return;
+    selectTarget(null, null);
+  }
+
   function setReachable(cells) {
     reachableCells = new Map(cells.map((c) => [`${c.x},${c.y}`, c.cost]));
     draw();
@@ -558,32 +919,65 @@ function createMapController({ canvas, role, myCharacterId }) {
     saveCameraDebounced();
   }
 
+  // Карта бесконечная, но камеру не отпускаем в пустоту (там легко потеряться):
+  // границы — «домашняя область» локации ∪ картинки ∪ токены, плюс запас
+  // CAMERA_CONTENT_MARGIN. Ушёл токен или положили картинку дальше — границы
+  // растут сами.
   function clampCamera() {
     if (!currentState || !currentState.map) return;
-    const layout = currentState.map;
-    const contentW = layout.gridWidth * layout.cellSize;
-    const contentH = layout.gridHeight * layout.cellSize + 20;
-    const margin = 260;
-    camera.x = clamp(camera.x, -margin, contentW + margin);
-    camera.y = clamp(camera.y, -margin, contentH + margin);
+    const { cellSize, gridWidth, gridHeight } = currentState.map;
+    let minX = 0;
+    let minY = 20;
+    let maxX = gridWidth * cellSize;
+    let maxY = gridHeight * cellSize + 20;
+    const include = (x, y) => {
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+    };
+    (currentState.mapImages || []).forEach((m) => mapImageCorners(m).forEach((p) => include(p.x, p.y)));
+    const includeToken = (pos) => include((pos.x + 0.5) * cellSize, (pos.y + 0.5) * cellSize + 20);
+    (currentState.characters || []).forEach((c) => { if (c.position) includeToken(c.position); });
+    (currentState.npcs || []).forEach((n) => {
+      if (n.position && n.locationId === currentState.activeLocationId) includeToken(n.position);
+    });
+    camera.x = clamp(camera.x, minX - CAMERA_CONTENT_MARGIN, maxX + CAMERA_CONTENT_MARGIN);
+    camera.y = clamp(camera.y, minY - CAMERA_CONTENT_MARGIN, maxY + CAMERA_CONTENT_MARGIN);
   }
 
   function updateState(state) {
     // Смена активной локации — камера прежней локации тут не годится
     // (другой размер сетки), поэтому переинициализируем её для новой.
+    const isFirst = !currentState;
     const locationChanged = currentState && currentState.activeLocationId !== state.activeLocationId;
     currentState = state;
     combatActive = !!(state && state.combat && state.combat.active);
+    // Анимацию ходьбы не запускаем на первом state, при смене локации (позиции
+    // подменяются целиком), в фоновой вкладке, при prefers-reduced-motion и
+    // сразу после реконнекта.
+    syncTokenAnimations(state, isFirst || !!locationChanged || document.hidden
+      || !!(reduceMotionQuery && reduceMotionQuery.matches) || skipNextAnim);
+    skipNextAnim = false;
     if (role !== 'gm' && state && state.characters) {
       const me = state.characters.find((c) => c.id === myCharacterId);
       if (me && me.color) drawColor = me.color;
     }
     if (locationChanged) cameraInitialized = false;
+    // Выбор ГМ не должен «висеть»: при смене локации и когда выбранного
+    // персонажа/NPC уже удалили — иначе следующий тап шлёт ход несуществующему.
+    if (role === 'gm' && selectedTarget) {
+      const list = selectedTarget.type === 'npc' ? state.npcs : state.characters;
+      const exists = !!(list && list.some((e) => e.id === selectedTarget.id));
+      if (locationChanged || !exists) clearSelection();
+    }
     if (!cameraInitialized && state && state.map) {
       initCamera();
       cameraInitialized = true;
     }
-    draw();
+    // Есть что анимировать — запускаем цикл (он сам делает draw() на каждом кадре).
+    if (tokenAnims.size || walkFx.length) startAnimLoop();
+    else draw();
   }
 
   function ensureCanvasSize() {
@@ -618,6 +1012,13 @@ function createMapController({ canvas, role, myCharacterId }) {
     return { x: Math.floor(world.x / cellSize), y: Math.floor((world.y - 20) / cellSize) };
   }
 
+  // Убитый персонаж игрока сам не ходит (сервер тоже отклонит: moveCharacter,
+  // reason 'dead') — клиент не шлёт ход и показывает курсор «нельзя».
+  function isMyCharacterDead() {
+    const me = currentState && currentState.characters.find((c) => c.id === myCharacterId);
+    return !!(me && me.dead);
+  }
+
   function handleTap(sx, sy) {
     if (!currentState) return;
     const { x, y } = cellFromCanvasPoint(sx, sy);
@@ -625,8 +1026,13 @@ function createMapController({ canvas, role, myCharacterId }) {
     const clickedCharacter = currentState.characters.find(
       (c) => c.position.x === x && c.position.y === y
     );
+    // У ГМ повторный тап по уже выбранному токену снимает выбор (как повторный
+    // клик по карточке). Тап по пустой клетке сюда не попадает — это ход.
     if (clickedCharacter && (role === 'gm' || clickedCharacter.id === myCharacterId)) {
-      selectTarget('character', clickedCharacter.id);
+      const alreadySelected = role === 'gm' && selectedTarget
+        && selectedTarget.type === 'character' && selectedTarget.id === clickedCharacter.id;
+      if (alreadySelected) selectTarget(null, null);
+      else selectTarget('character', clickedCharacter.id);
       return;
     }
 
@@ -635,7 +1041,9 @@ function createMapController({ canvas, role, myCharacterId }) {
       ? currentState.npcs.find((n) => n.position && n.locationId === currentState.activeLocationId && n.position.x === x && n.position.y === y)
       : null;
     if (clickedNpc) {
-      selectTarget('npc', clickedNpc.id);
+      const alreadySelected = selectedTarget && selectedTarget.type === 'npc' && selectedTarget.id === clickedNpc.id;
+      if (alreadySelected) selectTarget(null, null);
+      else selectTarget('npc', clickedNpc.id);
       return;
     }
 
@@ -645,6 +1053,8 @@ function createMapController({ canvas, role, myCharacterId }) {
       if (moveHandler) moveHandler(selectedTarget, x, y);
       return;
     }
+
+    if (isMyCharacterDead()) return;
 
     // Вне боя перемещение свободное — не гейтим тап подсветкой достижимости
     // (сервер и не считает её вне боя, см. gameState.getReachableCells).
@@ -706,7 +1116,7 @@ function createMapController({ canvas, role, myCharacterId }) {
     if (overCharacter || overNpc) return 'pointer';
 
     if (selectedTarget) {
-      if (role === 'player' && combatActive && !reachableCells.has(`${x},${y}`)) return 'not-allowed';
+      if (role === 'player' && (isMyCharacterDead() || (combatActive && !reachableCells.has(`${x},${y}`)))) return 'not-allowed';
       return 'pointer';
     }
     return 'grab';
@@ -813,6 +1223,7 @@ function createMapController({ canvas, role, myCharacterId }) {
       // Панорамирование: у мыши только средняя (1) / правая (2) кнопка;
       // тач/перо — одним касанием. ЛКМ мыши оставляем под тап/выбор.
       const isPanInput = !isMouse || e.button === 1 || e.button === 2;
+      panButton = isPanInput && isMouse ? e.button : null;
       if (isPanInput) {
         dragLast = { x: e.clientX, y: e.clientY };
         suppressTap = isMouse;
@@ -996,6 +1407,14 @@ function createMapController({ canvas, role, myCharacterId }) {
     if (wasSingle && !dragMoved && !suppressTap) {
       handleTap(pt.x, pt.y);
     }
+    // ПКМ без движения в режиме рисования — отмена последнего штриха; ПКМ с
+    // движением остаётся панорамированием. При взведённом эффекте рисовать
+    // нельзя (ветка vfx в pointerdown приоритетнее), поэтому и undo не нужен.
+    if (wasSingle && !dragMoved && panButton === 2 && e.type === 'pointerup'
+        && drawMode && !vfxPlaceMode && drawUndoHandler) {
+      drawUndoHandler();
+    }
+    panButton = null;
     suppressTap = false;
     canvas.style.cursor = cursorForHover(pt.x, pt.y);
   }
@@ -1097,12 +1516,18 @@ function createMapController({ canvas, role, myCharacterId }) {
     // быть видна), но под туманом/reachable-подсветкой/токенами.
     drawGrid();
 
+    // Пока выбранный токен идёт, подсветку достижимых клеток не рисуем: ромб
+    // пересчитан от новой клетки и «убегал» бы вперёд токена. После ходьбы её
+    // вернёт финальный кадр анимационного цикла.
     const cellInset = Math.max(1, cellSize * 0.05);
-    reachableCells.forEach((cost, key) => {
-      const [x, y] = key.split(',').map(Number);
-      ctx.fillStyle = 'rgba(76, 175, 111, 0.1)';
-      ctx.fillRect(x * cellSize + cellInset, y * cellSize + 20 + cellInset, cellSize - cellInset * 2, cellSize - cellInset * 2);
-    });
+    const selectedWalking = !!selectedTarget && tokenAnims.has(tokenKey(selectedTarget.type, selectedTarget.id));
+    if (!selectedWalking) {
+      reachableCells.forEach((cost, key) => {
+        const [x, y] = key.split(',').map(Number);
+        ctx.fillStyle = 'rgba(76, 175, 111, 0.1)';
+        ctx.fillRect(x * cellSize + cellInset, y * cellSize + 20 + cellInset, cellSize - cellInset * 2, cellSize - cellInset * 2);
+      });
+    }
 
     // Спецэффекты (дым/огонь/фейерверк) — над картинками/сеткой/reachable,
     // но ПОД туманом (см. CLAUDE.md): туман красится сразу следующим блоком
@@ -1180,10 +1605,17 @@ function createMapController({ canvas, role, myCharacterId }) {
       ctx.restore();
     }
 
+    // Следы ходьбы — над туманом, под токенами (см. drawWalkFx).
+    drawWalkFx();
+
     // Отрисовывает один токен (персонаж или NPC) — аватар/буква-заглушка + подпись.
-    function drawToken(entity, isSelected, fallbackColor, labelLines, isDead) {
-      const cx = (entity.position.x + 0.5) * cellSize;
-      const cy = (entity.position.y + 0.5) * cellSize + 20;
+    // pose — отображаемая поза (getTokenPose): дробная позиция в клетках при
+    // ходьбе и lift — подпрыгивание на шаге. Тело токена поднимается на lift,
+    // подпись остаётся на высоте земли (не дрожит).
+    function drawToken(entity, pose, isSelected, fallbackColor, labelLines, isDead) {
+      const cx = (pose.x + 0.5) * cellSize;
+      const groundY = (pose.y + 0.5) * cellSize + 20;
+      const cy = groundY - pose.lift;
       const r = cellSize * 0.35;
       const avatarImg = getAvatarImage(entity.avatar, draw);
 
@@ -1239,31 +1671,36 @@ function createMapController({ canvas, role, myCharacterId }) {
       ctx.strokeStyle = 'rgba(10, 11, 15, 0.85)';
       ctx.fillStyle = '#e8e8e8';
       labelLines.slice().reverse().forEach((line, i) => {
-        const y = cy - r - cellSize * 0.1 - i * lineHeight;
+        const y = groundY - r - cellSize * 0.1 - i * lineHeight;
         ctx.strokeText(line, cx, y);
         ctx.fillText(line, cx, y);
       });
     }
 
+    const poseNow = performance.now();
     currentState.characters.forEach((c) => {
       const isSelected = selectedTarget?.type === 'character' && selectedTarget.id === c.id;
       // Роль/имя персонажа сверху, а под ним — имя, введённое игроком при входе.
       const labelLines = c.claimedBy ? [c.name, c.claimedBy] : [c.name];
-      drawToken(c, isSelected, c.color || '#888', labelLines, c.dead);
+      drawToken(c, getTokenPose(tokenKey('character', c.id), c.position, poseNow), isSelected, c.color || '#888', labelLines, c.dead);
     });
 
     // NPC: игрокам сервер уже присылает только видимые (см. getPublicState),
     // мастеру — всех. Выбирать/двигать NPC может только мастер (см. handleTap).
     if (currentState.npcs) {
       currentState.npcs.filter((n) => n.position && n.locationId === currentState.activeLocationId).forEach((n) => {
-        const cx = (n.position.x + 0.5) * cellSize;
-        const cy = (n.position.y + 0.5) * cellSize + 20;
+        // Туман проверяем по ОТОБРАЖАЕМОЙ позиции: идущий NPC растворяется при
+        // входе в туман и проявляется на выходе (по логической позиции игрок
+        // увидел бы его стартовую точку в тумане).
+        const pose = getTokenPose(tokenKey('npc', n.id), n.position, poseNow);
+        const cx = (pose.x + 0.5) * cellSize;
+        const cy = (pose.y + 0.5) * cellSize + 20;
         // Игроку NPC под туманом не рисуется вообще — тайна тумана войны.
         if (role === 'player' && isPositionFogged(cx, cy)) return;
         const isSelected = selectedTarget?.type === 'npc' && selectedTarget.id === n.id;
         // Полупрозрачность у мастера — подсказка, что NPC ещё скрыт от игроков.
         if (role === 'gm' && !n.visible) ctx.globalAlpha = 0.45;
-        drawToken(n, isSelected, NPC_COLOR, [n.name], n.dead);
+        drawToken(n, pose, isSelected, NPC_COLOR, [n.name], n.dead);
         ctx.globalAlpha = 1;
       });
     }
@@ -1287,12 +1724,18 @@ function createMapController({ canvas, role, myCharacterId }) {
 
   return {
     updateState,
+    // Следующий state применить без анимации ходьбы (после реконнекта позиции
+    // могли уехать за время обрыва — не проигрывать всё разом).
+    skipNextTokenAnimation: () => { skipNextAnim = true; },
     setReachable,
     selectTarget,
+    clearSelection,
     setMoveHandler,
     setSelectHandler,
     getSelectedTarget: () => selectedTarget,
-    setFogEditMode: (v) => { fogEdit = !!v; if (!fogEdit) { fogSelection = null; fogPainting = false; } draw(); if (lastHoverPoint) canvas.style.cursor = cursorForHover(lastHoverPoint.x, lastHoverPoint.y); },
+    // Включение любого режима карты (туман/картинки/рисование/эффекты) сбрасывает
+    // выбор ГМ: иначе забытый выбранный токен можно случайно сдвинуть тапом.
+    setFogEditMode: (v) => { fogEdit = !!v; if (fogEdit && role === 'gm') clearSelection(); if (!fogEdit) { fogSelection = null; fogPainting = false; } draw(); if (lastHoverPoint) canvas.style.cursor = cursorForHover(lastHoverPoint.x, lastHoverPoint.y); },
     setFogTool: (t) => { fogTool = t === 'zone' ? 'zone' : 'brush'; },
     setFogHide: (v) => { fogHide = !!v; },
     setFogBrush: (n) => { fogBrush = Math.max(0, Math.round(n)); },
@@ -1307,18 +1750,19 @@ function createMapController({ canvas, role, myCharacterId }) {
     // отрисованного прямоугольника, см. блок currentState.mapImages.forEach
     // в draw()). Зум не меняем — только сдвигаем камеру.
     centerCameraOn: (x, y) => { camera.x = x; camera.y = y; clampCamera(); draw(); saveCameraDebounced(); },
-    setImageEditMode: (v) => { imageEdit = !!v; if (!imageEdit) { imageDragging = null; selectedMapImageId = null; if (mapImageSelectHandler) mapImageSelectHandler(null); } draw(); if (lastHoverPoint) canvas.style.cursor = cursorForHover(lastHoverPoint.x, lastHoverPoint.y); },
+    setImageEditMode: (v) => { imageEdit = !!v; if (imageEdit && role === 'gm') clearSelection(); if (!imageEdit) { imageDragging = null; selectedMapImageId = null; if (mapImageSelectHandler) mapImageSelectHandler(null); } draw(); if (lastHoverPoint) canvas.style.cursor = cursorForHover(lastHoverPoint.x, lastHoverPoint.y); },
     setMapImageSelectHandler: (fn) => { mapImageSelectHandler = fn; },
     setMapImageUpdateHandler: (fn) => { mapImageUpdateHandler = fn; },
     selectMapImage: (id) => { selectedMapImageId = id; draw(); },
     getSelectedMapImageId: () => selectedMapImageId,
-    setDrawMode: (v) => { drawMode = !!v; if (!drawMode) { currentStroke = null; drawErasing = false; erasedThisGesture = null; } draw(); if (lastHoverPoint) canvas.style.cursor = cursorForHover(lastHoverPoint.x, lastHoverPoint.y); },
+    setDrawMode: (v) => { drawMode = !!v; if (drawMode && role === 'gm') clearSelection(); if (!drawMode) { currentStroke = null; drawErasing = false; erasedThisGesture = null; } draw(); if (lastHoverPoint) canvas.style.cursor = cursorForHover(lastHoverPoint.x, lastHoverPoint.y); },
     setDrawTool: (t) => { drawTool = t === 'eraser' ? 'eraser' : 'pen'; },
     setDrawWidth: (n) => { drawWidth = clamp(Math.round(n) || 4, 1, 24); },
     setDrawAddHandler: (fn) => { drawAddHandler = fn; },
     setDrawEraseHandler: (fn) => { drawEraseHandler = fn; },
+    setDrawUndoHandler: (fn) => { drawUndoHandler = fn; },
     getMyDrawColor: () => drawColor,
-    setVfxPlaceMode: (type) => { vfxPlaceMode = type || null; if (lastHoverPoint) canvas.style.cursor = cursorForHover(lastHoverPoint.x, lastHoverPoint.y); },
+    setVfxPlaceMode: (type) => { vfxPlaceMode = type || null; if (vfxPlaceMode && role === 'gm') clearSelection(); if (lastHoverPoint) canvas.style.cursor = cursorForHover(lastHoverPoint.x, lastHoverPoint.y); },
     setVfxPlaceHandler: (fn) => { vfxPlaceHandler = fn; },
     playEffect,
   };

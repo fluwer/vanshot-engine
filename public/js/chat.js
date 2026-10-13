@@ -50,14 +50,15 @@ function renderChat(chat) {
       const fadeSteps = distanceFromEnd - CHAT_FADE_SHARP_COUNT + 1;
       line.style.opacity = Math.max(CHAT_FADE_MIN, 1 - fadeSteps * CHAT_FADE_STEP);
     }
+    const authorName = entry.dead ? `${entry.author} ☠` : entry.author; // автор играет убитым персонажем
     if (entry.kind === 'emote') {
-      line.appendChild(document.createTextNode(`* ${entry.author} ${entry.text} *`));
+      line.appendChild(document.createTextNode(`* ${authorName} ${entry.text} *`));
     } else if (entry.kind === 'notice') {
       line.appendChild(document.createTextNode(entry.text));
     } else {
       const author = document.createElement('span');
       author.className = 'chat-author';
-      author.textContent = `${entry.author}: `;
+      author.textContent = `${authorName}: `;
       line.appendChild(author);
       line.appendChild(document.createTextNode(entry.text));
     }

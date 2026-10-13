@@ -8,6 +8,7 @@ import TopBarPanel from './TopBarPanel.vue';
 import GmAttributesPanel from './GmAttributesPanel.vue';
 import ChatPanel from './ChatPanel.vue';
 import EffectsPanel from './EffectsPanel.vue';
+import LocationBadge from './LocationBadge.vue';
 
 // gm.js (обычный не-модульный скрипт) грузится раньше этого бандла и
 // успевает выставить window.gmSocket/window.gmBridge синхронно при загрузке
@@ -96,6 +97,15 @@ window.mapToolsPanelApp = {
     mapToolsStore.mapImages = mapImages;
     mapToolsStore.locations = locations || [];
     mapToolsStore.activeLocationId = activeLocationId;
+  },
+};
+
+// ---- Строка «Текущая локация» ----
+const locationBadgeStore = reactive({ name: '' });
+createApp(LocationBadge, { store: locationBadgeStore }).mount('#location-badge-vue-root');
+window.locationBadgeApp = {
+  updateState(name) {
+    locationBadgeStore.name = name || '';
   },
 };
 

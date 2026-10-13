@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import Modal from './Modal.vue';
 
 const props = defineProps({
@@ -141,30 +141,45 @@ function clearAllDraw() {
 // ---- Локации ----
 const showLocationDialog = ref(false);
 const newLocationName = ref('');
-const newLocationWidth = ref(60);
-const newLocationHeight = ref(40);
 const renamingLocationId = ref(null);
 const renameValue = ref('');
 
 function openLocationDialog() {
   newLocationName.value = '';
-  newLocationWidth.value = 60;
-  newLocationHeight.value = 40;
   showLocationDialog.value = true;
 }
 
+// Выбранная в списке локация — чисто локальное состояние панели (на сервер не
+// уходит): клик по строке только выбирает, а переход выполняет отдельная кнопка
+// «Перейти на выбранную локацию». Активная локация (📍) и выбранная — разные вещи.
+const selectedLocationId = ref(null);
+const selectedLocationIndex = computed(() => props.store.locations.findIndex((l) => l.id === selectedLocationId.value));
+const canGoToSelected = computed(() =>
+  selectedLocationIndex.value !== -1 && selectedLocationId.value !== props.store.activeLocationId);
+const canMoveUp = computed(() => selectedLocationIndex.value > 0);
+const canMoveDown = computed(() =>
+  selectedLocationIndex.value !== -1 && selectedLocationIndex.value < props.store.locations.length - 1);
+
+// Список локаций приходит с каждым state: если выбранной больше нет (удалена)
+// или выбора ещё не было — выбираем активную.
+watch(() => props.store.locations, () => {
+  if (selectedLocationIndex.value === -1) selectedLocationId.value = props.store.activeLocationId;
+}, { immediate: true });
+
+// Размер сетки не спрашиваем: карта бесконечная, у локации только «домашняя
+// область» по умолчанию (см. server/config.js, server/map.js).
 function addLocation() {
   const name = newLocationName.value.trim();
   if (!name) return;
   props.bridge.socket.emit(
     'location:add',
-    { name, gridWidth: Number(newLocationWidth.value), gridHeight: Number(newLocationHeight.value) },
+    { name },
     (ack) => {
       if (ack && ack.ok && ack.location) {
         showLocationDialog.value = false;
-        // Сразу открываем созданную локацию — иначе ГМ остаётся в старой и
-        // должен вручную кликать по новой строке в списке.
-        switchLocation(ack.location.id);
+        // Только выбираем созданную локацию: переход — осознанное действие
+        // кнопкой «Перейти», а не побочный эффект создания.
+        selectedLocationId.value = ack.location.id;
       }
     },
   );
@@ -173,6 +188,17 @@ function addLocation() {
 function switchLocation(locationId) {
   if (locationId === props.store.activeLocationId) return;
   props.bridge.socket.emit('location:switch', { locationId });
+}
+
+function goToSelectedLocation() {
+  if (canGoToSelected.value) switchLocation(selectedLocationId.value);
+}
+
+// Порядок локаций = порядок в списке; сдвигаем выбранную на одну позицию.
+function moveSelectedLocation(delta) {
+  const to = selectedLocationIndex.value + delta;
+  if (selectedLocationIndex.value === -1 || to < 0 || to >= props.store.locations.length) return;
+  props.bridge.socket.emit('location:move', { locationId: selectedLocationId.value, toIndex: to });
 }
 
 function startRename(loc) {
@@ -259,14 +285,11 @@ function removeLocation(locationId) {
       </div>
     </div>
     <div class="tab-pane tab-pane-flex" :class="{ active: activeTab === 'tab-drawing' }">
-      <div class="row" style="align-items:center; gap:4px;">
-        <button class="fog-btn fog-toggle" :class="{ active: activeEditMode === 'draw' }" @click="setEditMode('draw')">✏️ Рисовать</button>
-        <span class="hint-icon" title="Включите «Рисовать», ведите мышью/пальцем по карте. Ластик стирает только ваши линии; «Очистить всё» удаляет рисунки всех участников без возможности восстановления.">❓</span>
-      </div>
+      <button class="fog-btn fog-toggle" :class="{ active: activeEditMode === 'draw' }" @click="setEditMode('draw')">✏️ Рисовать</button>
       <div class="fog-group">
         <div class="row" style="gap:4px">
-          <button class="fog-btn draw-tool" :class="{ active: drawTool === 'pen' }" title="Перо" @click="setDrawTool('pen')">🖊️</button>
-          <button class="fog-btn draw-tool" :class="{ active: drawTool === 'eraser' }" title="Ластик" @click="setDrawTool('eraser')">🧹</button>
+          <button class="fog-btn draw-tool" :class="{ active: drawTool === 'pen' }" title="Перо" aria-label="Перо" @click="setDrawTool('pen')">🖊️</button>
+          <button class="fog-btn draw-tool" :class="{ active: drawTool === 'eraser' }" title="Ластик — стирает только ваши линии" aria-label="Ластик" @click="setDrawTool('eraser')">🧹</button>
         </div>
       </div>
       <div class="fog-group">
@@ -279,12 +302,13 @@ function removeLocation(locationId) {
     <div class="tab-pane tab-pane-flex" :class="{ active: activeTab === 'tab-locations' }">
       <div class="map-images-list">
         <div
-          v-for="loc in store.locations"
+          v-for="(loc, i) in store.locations"
           :key="loc.id"
           class="map-image-row location-row"
-          :class="{ selected: loc.id === store.activeLocationId }"
-          @click="switchLocation(loc.id)"
+          :class="{ selected: loc.id === selectedLocationId, 'active-location': loc.id === store.activeLocationId }"
+          @click="selectedLocationId = loc.id"
         >
+          <span class="location-index">{{ i + 1 }}.</span>
           <input
             v-if="renamingLocationId === loc.id"
             class="gm-item-input location-row-name"
@@ -309,6 +333,11 @@ function removeLocation(locationId) {
         </div>
         <p v-if="!store.locations.length" class="muted small">Нет локаций</p>
       </div>
+      <div class="row" style="gap:4px">
+        <button class="fog-btn" title="Выбранную локацию выше в списке" :disabled="!canMoveUp" @click="moveSelectedLocation(-1)">▲</button>
+        <button class="fog-btn" title="Выбранную локацию ниже в списке" :disabled="!canMoveDown" @click="moveSelectedLocation(1)">▼</button>
+      </div>
+      <button class="fog-btn fog-toggle" :disabled="!canGoToSelected" @click="goToSelectedLocation">➡️ Перейти на выбранную локацию</button>
       <button class="fog-btn wide" @click="openLocationDialog">➕ Создать локацию</button>
     </div>
   </div>
@@ -317,16 +346,6 @@ function removeLocation(locationId) {
     <div class="form-field">
       <span class="form-field-label">Название</span>
       <input v-model="newLocationName" placeholder="Название" @keyup.enter="addLocation" autofocus>
-    </div>
-    <div class="form-row">
-      <div class="form-field form-subfield">
-        <span class="form-subfield-label">Ширина</span>
-        <input type="number" min="5" max="300" v-model="newLocationWidth">
-      </div>
-      <div class="form-field form-subfield">
-        <span class="form-subfield-label">Высота</span>
-        <input type="number" min="5" max="300" v-model="newLocationHeight">
-      </div>
     </div>
     <div class="form-actions">
       <button @click="addLocation">Создать</button>

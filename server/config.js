@@ -39,12 +39,15 @@ module.exports = {
 
   // ---- Локации ----
   CELL_SIZE: 16, // единый размер клетки для всех локаций
-  DEFAULT_LOCATION_WIDTH: 60,
-  DEFAULT_LOCATION_HEIGHT: 40,
-  MIN_LOCATION_SIZE: 5,
-  MAX_LOCATION_SIZE: 300,
+  // Сетка локации бесконечная: ходить можно в любую клетку (см. isWalkable в
+  // map.js). Размер локации при создании не спрашивается — это лишь
+  // «домашняя область» (центр для спавна, стартовая камера, границы для
+  // «Скрыть всё» у тумана), а не граница карты.
+  DEFAULT_LOCATION_WIDTH: 150,
+  DEFAULT_LOCATION_HEIGHT: 150,
+  MAX_COORD: 100000, // предел |x|,|y| клетки: защита от мусора с клиента и потери точности canvas
   LOCATION_NAME_MAX_LENGTH: 60,
 
-  // ---- Спецэффекты на карте (дым/огонь/фейерверк) ----
-  VFX_TYPES: ['smoke', 'fire', 'firework'], // доступные типы, transient — не хранятся в state/runtime.json
+  // ---- Спецэффекты на карте ----
+  VFX_TYPES: ['smoke', 'fire', 'firework', 'explosion', 'lightning', 'magic'], // доступные типы, transient — не хранятся в state/runtime.json
 };

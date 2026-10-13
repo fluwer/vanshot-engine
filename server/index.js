@@ -251,9 +251,9 @@ io.on('connection', (socket) => {
   });
 
   // Локации — создаёт/переключает/удаляет только мастер.
-  socket.on('location:add', ({ name, gridWidth, gridHeight }, ack) => {
+  socket.on('location:add', ({ name }, ack) => {
     if (socket.data.role !== 'gm') return;
-    const location = gameState.addLocation(name, gridWidth, gridHeight);
+    const location = gameState.addLocation(name);
     if (typeof ack === 'function') ack({ ok: !!location, location });
     if (location) broadcastState();
   });
@@ -262,6 +262,12 @@ io.on('connection', (socket) => {
     if (socket.data.role !== 'gm') return;
     gameState.renameLocation(locationId, name);
     broadcastState();
+  });
+
+  // Порядок локаций: ГМ переставляет выбранную на позицию toIndex (0-based).
+  socket.on('location:move', ({ locationId, toIndex }) => {
+    if (socket.data.role !== 'gm') return;
+    if (gameState.moveLocation(locationId, toIndex)) broadcastState();
   });
 
   // Переключение локации отдельно шлёт fog:update — иначе клиенты не узнают
@@ -324,7 +330,7 @@ io.on('connection', (socket) => {
     if (typeof soundId !== 'string' || !soundId) return;
     io.emit('sound:play', { soundId });
     const safeLabel = typeof label === 'string' && label.trim() ? label.trim().slice(0, config.SOUND_LABEL_MAX_LENGTH) : soundId;
-    gameState.addChatMessage(socket.data.name, `запускает звук «${safeLabel}»`, 'system');
+    gameState.addChatMessage(socket.data.name, `запускает звук «${safeLabel}»`, 'system', gameState.isCharacterDead(socket.data.characterId));
     broadcastState();
   });
 
@@ -414,13 +420,13 @@ io.on('connection', (socket) => {
           return;
         }
         const rollText = gameState.formatFreeRoll(parsed.count, parsed.sides, parsed.mod);
-        gameState.addChatMessage(socket.data.name, rollText, 'system');
+        gameState.addChatMessage(socket.data.name, rollText, 'system', gameState.isCharacterDead(socket.data.characterId));
         broadcastState();
         return;
       }
       if (cmd === 'me') {
         if (!argStr) return;
-        gameState.addChatMessage(socket.data.name, argStr, 'emote');
+        gameState.addChatMessage(socket.data.name, argStr, 'emote', gameState.isCharacterDead(socket.data.characterId));
         broadcastState();
         return;
       }
@@ -428,7 +434,7 @@ io.on('connection', (socket) => {
       return;
     }
 
-    gameState.addChatMessage(socket.data.name, text, 'user');
+    gameState.addChatMessage(socket.data.name, text, 'user', gameState.isCharacterDead(socket.data.characterId));
     broadcastState();
   });
 

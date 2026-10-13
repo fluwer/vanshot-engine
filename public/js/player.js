@@ -100,6 +100,7 @@ function clearSession() {
 // прошлым персонажем; не вышло (код сменился/персонаж удалён) — сбрасываем
 // её и уходим в обычный 'observer' с формой входа.
 socket.on('connect', () => {
+  if (mapController) mapController.skipNextTokenAnimation(); // после реконнекта позиции — без проигрывания ходьбы
   const saved = loadSession();
   if (!saved) {
     socket.emit('join', { role: 'observer' });
@@ -146,6 +147,7 @@ function onJoined({ characterId, name }) {
   });
   mapController.setDrawAddHandler((stroke) => socket.emit('drawing:add', stroke));
   mapController.setDrawEraseHandler((id) => socket.emit('drawing:erase', { id }));
+  mapController.setDrawUndoHandler(() => socket.emit('drawing:undo')); // ПКМ в режиме рисования
   mapController.setVfxPlaceHandler((type, x, y) => socket.emit('vfx:trigger', { type, x, y }));
   window.playerBridge.mapController = mapController;
   requestReachable();
@@ -277,6 +279,7 @@ socket.on('state', (state) => {
   lastState = state;
   window.charactersStoreApp?.updateState(state.characters, state.skillsCatalog);
   window.diceLogPanelApp?.updateState(state.diceLog);
+  window.locationBadgeApp?.updateState(state.activeLocationName);
   renderChat(state.chat);
   window.combatPanelApp?.updateState(state.combat, state.npcs || []);
   applyMusicState(state.music);

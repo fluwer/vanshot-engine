@@ -14,7 +14,8 @@ function formatDiceEntry(entry) {
   }
   if (entry.resolveBonus) parts.push(`✨ Решимость +${entry.resolveBonus}`);
   const dcText = entry.dc ? ` · 🎯 DC ${entry.dc} — ${entry.success ? '✅ успех' : '❌ провал'}` : '';
-  return `${entry.characterName}: ${parts.join(' + ')} = ${entry.total}${dcText}`;
+  const name = entry.dead ? `${entry.characterName} ☠` : entry.characterName; // бросок убитого — с меткой
+  return `${name}: ${parts.join(' + ')} = ${entry.total}${dcText}`;
 }
 window.formatDiceEntry = formatDiceEntry;
 

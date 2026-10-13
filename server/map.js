@@ -1,38 +1,34 @@
-// Сетка каждой локации — просто прямоугольник gridWidth×gridHeight без
-// именованных комнат/зон; ГМ сам расставляет картинки/туман/токены.
-// Все функции принимают location ({gridWidth, gridHeight}) первым
-// параметром — так модуль остаётся без внутреннего состояния и работает
-// с любой локацией, а не только с «активной» глобальной картой.
+const config = require('./config');
+
+// Сетка локации бесконечная: ходить можно в любую целую клетку в пределах
+// ±MAX_COORD (защита от мусора с клиента и потери точности canvas). Размер
+// локации (gridWidth×gridHeight) — лишь «домашняя область»: центр для спавна,
+// стартовая камера, границы для «Скрыть всё» у тумана; ходьбу он не ограничивает.
+// Все функции принимают location первым параметром — модуль остаётся без
+// внутреннего состояния и работает с любой локацией, а не только с «активной».
 function isWalkable(location, x, y) {
-  return x >= 0 && y >= 0 && x < location.gridWidth && y < location.gridHeight;
+  return Number.isInteger(x) && Number.isInteger(y)
+    && Math.abs(x) <= config.MAX_COORD && Math.abs(y) <= config.MAX_COORD;
 }
 
-const DIRECTIONS = [
-  { dx: 1, dy: 0 },
-  { dx: -1, dy: 0 },
-  { dx: 0, dy: 1 },
-  { dx: 0, dy: -1 },
-];
+// Препятствий на карте нет, поэтому кратчайший путь между клетками — это
+// манхэттенское расстояние (шаг по 4 направлениям, стоимость 1 за клетку).
+function manhattan(a, b) {
+  return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+}
 
-// BFS: все клетки, достижимые из start, потратив не больше energy шагов.
+// Все клетки, достижимые из start, потратив не больше energy шагов (ромб).
 // Возвращает Map "x,y" -> потраченная энергия.
 function findReachable(location, start, energy) {
   const visited = new Map();
-  visited.set(`${start.x},${start.y}`, 0);
-  const queue = [{ x: start.x, y: start.y, cost: 0 }];
-
-  while (queue.length) {
-    const current = queue.shift();
-    if (current.cost >= energy) continue;
-    for (const { dx, dy } of DIRECTIONS) {
-      const nx = current.x + dx;
-      const ny = current.y + dy;
-      const nextCost = current.cost + 1;
-      if (!isWalkable(location, nx, ny)) continue;
-      const key = `${nx},${ny}`;
-      if (visited.has(key) && visited.get(key) <= nextCost) continue;
-      visited.set(key, nextCost);
-      queue.push({ x: nx, y: ny, cost: nextCost });
+  const radius = Math.max(0, Math.floor(energy) || 0);
+  for (let dx = -radius; dx <= radius; dx++) {
+    const rest = radius - Math.abs(dx);
+    for (let dy = -rest; dy <= rest; dy++) {
+      const x = start.x + dx;
+      const y = start.y + dy;
+      if (!isWalkable(location, x, y)) continue;
+      visited.set(`${x},${y}`, Math.abs(dx) + Math.abs(dy));
     }
   }
   return visited;
@@ -40,10 +36,9 @@ function findReachable(location, start, energy) {
 
 function isReachable(location, start, target, energy) {
   if (!isWalkable(location, target.x, target.y)) return { ok: false, reason: 'not-walkable' };
-  const reachable = findReachable(location, start, energy);
-  const key = `${target.x},${target.y}`;
-  if (!reachable.has(key)) return { ok: false, reason: 'out-of-range' };
-  return { ok: true, cost: reachable.get(key) };
+  const cost = manhattan(start, target);
+  if (cost > energy) return { ok: false, reason: 'out-of-range' };
+  return { ok: true, cost };
 }
 
 function defaultSpawn(location, offsetIndex = 0) {

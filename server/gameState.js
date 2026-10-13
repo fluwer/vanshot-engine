@@ -294,13 +294,19 @@ function adjustArmor(characterId, delta) {
   c.armor = Math.max(0, c.armor + delta);
 }
 
-// Статус "убит" — чисто визуальная метка (крестик поверх токена), как у NPC.
-// Не персистится: HP/энергия/решимость персонажей и так не переживают
-// перезапуск сервера (сбрасываются из characters.json), дохоп сюда не нужен.
+// Статус "убит": крестик поверх токена, метка ☠ в логе бросков и чате, запрет
+// самостоятельного хода игроку (см. moveCharacter). Персистится в runtime.json
+// вместе с остальным состоянием персонажа (persistRuntimeState).
 function setCharacterDead(characterId, dead) {
   const c = findCharacter(characterId);
   if (!c) return;
   c.dead = !!dead;
+}
+
+// Для пометки ☠ у автора сообщений чата; ГМ/наблюдатель (characterId пуст) — не мёртв.
+function isCharacterDead(characterId) {
+  const c = characterId ? findCharacter(characterId) : null;
+  return !!(c && c.dead);
 }
 
 function adjustNpcArmor(npcId, delta) {
@@ -367,16 +373,33 @@ function setNpcLocation(npcId, locationId) {
 // ---- Локации -------------------------------------------------------------
 // ГМ создаёт локации прямо по ходу игры (не конфиг-файлом), может готовить
 // несколько заранее, потом переключаться (см. setActiveLocation).
-function addLocation(name, gridWidth, gridHeight) {
+// Размер сетки ГМ не задаёт: карта бесконечная (см. map.isWalkable), а
+// gridWidth/gridHeight — только «домашняя область» (спавн, стартовая камера).
+function addLocation(name) {
   const trimmed = String(name || '').trim();
   if (!trimmed) return null;
-  const w = clamp(Number(gridWidth) || config.DEFAULT_LOCATION_WIDTH, config.MIN_LOCATION_SIZE, config.MAX_LOCATION_SIZE);
-  const h = clamp(Number(gridHeight) || config.DEFAULT_LOCATION_HEIGHT, config.MIN_LOCATION_SIZE, config.MAX_LOCATION_SIZE);
   const id = slugifyId(trimmed, new Set(locations.map((l) => l.id)));
-  const location = { id, name: trimmed.slice(0, config.LOCATION_NAME_MAX_LENGTH), gridWidth: w, gridHeight: h };
+  const location = {
+    id,
+    name: trimmed.slice(0, config.LOCATION_NAME_MAX_LENGTH),
+    gridWidth: config.DEFAULT_LOCATION_WIDTH,
+    gridHeight: config.DEFAULT_LOCATION_HEIGHT,
+  };
   locations.push(location);
   saveLocations();
   return location;
+}
+
+// Переставляет локацию на позицию toIndex (0-based) — порядок локаций это
+// порядок массива locations. Возвращает true, если порядок изменился.
+function moveLocation(locationId, toIndex) {
+  const from = locations.findIndex((l) => l.id === locationId);
+  const to = Number.isInteger(toIndex) ? clamp(toIndex, 0, locations.length - 1) : -1;
+  if (from === -1 || to === -1 || from === to) return false;
+  const [moved] = locations.splice(from, 1);
+  locations.splice(to, 0, moved);
+  saveLocations();
+  return true;
 }
 
 function renameLocation(locationId, name) {
@@ -709,11 +732,13 @@ function updateNpc(npcId, data) {
 }
 
 // Двигает персонажа на (x, y). Вне боя перемещение свободное (только
-// проверка проходимости, без энергии) — энергобюджет и BFS-достижимость
-// действуют только во время боя, и только в свой ход по инициативе.
+// проверка проходимости, без энергии) — энергобюджет и достижимость по
+// энергии действуют только во время боя, и только в свой ход по инициативе.
+// Убитый персонаж сам не ходит (ГМ может переставить его через forceMoveCharacter).
 function moveCharacter(characterId, target) {
   const c = findCharacter(characterId);
   if (!c) return { ok: false, reason: 'unknown-character' };
+  if (c.dead) return { ok: false, reason: 'dead' };
 
   if (!state.combat.active) {
     if (!map.isWalkable(getActiveLocation(), target.x, target.y)) {
@@ -766,7 +791,7 @@ function forceMoveNpc(npcId, target) {
 function getReachableCells(characterId) {
   if (!state.combat.active) return [];
   const c = findCharacter(characterId);
-  if (!c) return [];
+  if (!c || c.dead) return [];
   const turn = state.combat.order[state.combat.currentIndex];
   if (!turn || turn.type !== 'character' || turn.id !== characterId) return [];
   const reachable = map.findReachable(getActiveLocation(), c.position, c.energy.current);
@@ -800,6 +825,7 @@ function rollDice(characterId, attribute, spendResolve, label) {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     characterId,
     characterName: entity ? entity.name : (label || 'Мастер'),
+    dead: !!(entity && entity.dead), // бросает убитый — клиент помечает имя ☠
     attribute,
     die,
     attrValue,
@@ -1184,13 +1210,15 @@ function applyDamage(targetType, targetId, rawAmount) {
 
 // Общий чат: свободные сообщения + системные уведомления (например, о звуках).
 // Персистится в chat.json по тому же принципу, что и fog.json.
-function addChatMessage(author, text, kind = 'user') {
+// dead — автор сейчас играет убитым персонажем: клиент помечает его ☠.
+function addChatMessage(author, text, kind = 'user', dead = false) {
   if (typeof text !== 'string') return null;
   const trimmed = text.trim().slice(0, config.CHAT_MESSAGE_MAX_LENGTH);
   if (!trimmed) return null;
   const entry = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     author: author || 'Аноним',
+    dead: !!dead,
     text: trimmed,
     kind, // 'user' | 'system'
     time: new Date().toISOString(),
@@ -1265,6 +1293,9 @@ function getPublicState() {
     diceLog: state.diceLog,
     map: getActiveLocationLayout(),
     activeLocationId: activeId,
+    // Имя активной локации — игроку нужно для строки «Текущая локация» (списка
+    // локаций у него нет, он приходит только в getGMState).
+    activeLocationName: (findLocation(activeId) || locations[0]).name,
     skillsCatalog,
     chat: state.chat,
     combat: state.combat,
@@ -1310,11 +1341,13 @@ module.exports = {
   adjustArmor,
   adjustNpcArmor,
   setCharacterDead,
+  isCharacterDead,
   setNpcVisible,
   setNpcDead,
   setNpcFaction,
   setNpcLocation,
   addLocation,
+  moveLocation,
   renameLocation,
   setActiveLocation,
   removeLocation,

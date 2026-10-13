@@ -59,6 +59,7 @@ const mapController = createMapController({
 // src/gm-panel/main.js и CharactersPanel.vue).
 window.gmBridge = {
   selectTarget: (type, id) => mapController.selectTarget(type, id),
+  clearSelection: () => mapController.clearSelection(),
   getNpcAvatarPresetUrls: () => npcAvatarPresetUrls,
   resizeImage,
   npcColor: NPC_COLOR,
@@ -80,6 +81,25 @@ mapController.setSelectHandler(() => {
   requestReachable();
   window.charactersPanelApp?.setSelected(mapController.getSelectedTarget());
 });
+
+// Любое действие в интерфейсе сбрасывает выбранного для броска персонажа/NPC
+// (иначе забытый выбор можно случайно сдвинуть тапом по карте). Слушатель в
+// capture-фазе — не зависит от @click.stop в Vue-панелях. Исключения — зоны,
+// где выбор как раз нужен или меняется самим кликом:
+//  - карта (#map-canvas): тап сам решает — выбрать / снять / пойти;
+//  - нижняя панель броска и верхняя панель (DC ставят перед броском);
+//  - тело карточек участников и строки боя: у них свой toggle по клику, а вот
+//    кнопки/поля ВНУТРИ них (HP, урон, ☠ и т.п.) — уже «действие» и сбрасывают.
+const KEEP_SELECTION_ZONES = '#map-canvas, .action-rail, .gm-top-bar';
+const KEEP_SELECTION_CARDS = '.char-mini, .npc-mini, .combat-turn-row';
+const KEEP_SELECTION_CONTROLS = 'button, input, label, select, textarea';
+document.addEventListener('pointerdown', (e) => {
+  const target = e.target instanceof Element ? e.target : null;
+  if (!target) return;
+  if (target.closest(KEEP_SELECTION_ZONES)) return;
+  if (target.closest(KEEP_SELECTION_CARDS) && !target.closest(KEEP_SELECTION_CONTROLS)) return;
+  mapController.clearSelection();
+}, true);
 
 // ---- Режимы редактирования карты (туман/картинки/рисование), взаимоисключение
 // (activeEditMode) и все кнопки/поля управления — теперь в MapToolsPanel.vue.
@@ -103,12 +123,14 @@ mapController.setMapImageUpdateHandler(({ id, x, y, scale, rotation }) => {
 // ---- Рисование на карте ----
 mapController.setDrawAddHandler((stroke) => socket.emit('drawing:add', stroke));
 mapController.setDrawEraseHandler((id) => socket.emit('drawing:erase', { id }));
+mapController.setDrawUndoHandler(() => socket.emit('drawing:undo')); // ПКМ в режиме рисования
 
 // ---- Спецэффекты (дым/огонь/фейерверк) — доступны и ГМ, и игрокам ----
 mapController.setVfxPlaceHandler((type, x, y) => socket.emit('vfx:trigger', { type, x, y }));
 socket.on('vfx:play', ({ type, x, y }) => mapController.playEffect(type, x, y));
 
 socket.on('connect', () => {
+  mapController.skipNextTokenAnimation(); // после реконнекта позиции — без проигрывания ходьбы
   socket.emit('join', { role: 'gm', name: 'Мастер' });
 });
 
@@ -147,6 +169,7 @@ function showDice(entry) {
 
 socket.on('state', (state) => {
   window.dcControlsPanelApp?.updateState(state.currentDc);
+  window.locationBadgeApp?.updateState(state.activeLocationName);
   window.charactersPanelApp?.updateState(state.characters, state.npcs, state.skillsCatalog, state.locations);
   window.diceLogPanelApp?.updateState(state.diceLog);
   renderChat(state.chat);

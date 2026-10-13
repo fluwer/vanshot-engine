@@ -317,6 +317,9 @@ input, select {
 .hint-icon:hover { opacity: 1; }
 .npc-faction-btn { flex: 0 0 auto; min-width: 34px; text-align: center; }
 
+/* ---- Панель спецэффектов: кнопки сеткой 2 в ряд (их шесть, «🎆 Фейерверк» в трёх колонках не влезает) ---- */
+.vfx-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
+
 /* ---- Музыка (плеер, всегда используется вместе с .music-panel в player.html) ---- */
 .music-panel select {
   width: 100%; padding: 5px 8px; background: #232836; border: 1px solid #333a4a;
@@ -349,6 +352,21 @@ input, select {
   flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .location-row-actions { display: flex; gap: 4px; flex-shrink: 0; margin-left: auto; }
+.location-index { flex-shrink: 0; min-width: 16px; font-size: 11px; color: #9aa3b8; }
+/* Выбранная (.selected) и активная (.active-location, там где сейчас игра) — разные вещи */
+.location-row.active-location { border-left: 3px solid #5a7bd8; }
+.fog-btn:disabled { opacity: .4; cursor: default; }
+.fog-btn:disabled:hover { background: #232836; }
+
+/* ---- Строка «Текущая локация» (ГМ и игрок): над картой, клики пропускает ---- */
+.location-badge {
+  position: absolute; top: 8px; left: 336px; z-index: 4; pointer-events: none;
+  max-width: 30vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 4px 10px; border-radius: 8px; font-size: 13px; color: #e0e4ee;
+  background: rgba(18, 20, 26, 0.86); border: 1px solid #333a4a;
+}
+/* У игрока слева сверху стоит кнопка «Выход» — бейдж правее неё */
+#app .location-badge { left: 96px; }
 
 /* ---- Вкладки внутри плавающих панелей ГМ (Участники, Карта, Звук) ---- */
 .panel-tabs { display: flex; gap: 4px; padding: 0 8px 5px; flex-shrink: 0; }

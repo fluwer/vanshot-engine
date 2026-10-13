@@ -10,6 +10,7 @@ import SoundboardPanel from './SoundboardPanel.vue';
 import MusicPanel from './MusicPanel.vue';
 import DrawingPanel from './DrawingPanel.vue';
 import EffectsPanel from '../gm-panel/EffectsPanel.vue';
+import LocationBadge from '../gm-panel/LocationBadge.vue';
 import ActionRailPanel from './ActionRailPanel.vue';
 
 // player.js (обычный не-модульный скрипт) грузится раньше этого бандла и
@@ -50,6 +51,15 @@ createApp(SoundboardPanel, { bridge }).mount('#soundboard-panel-vue-root');
 createApp(MusicPanel, { bridge }).mount('#music-panel-vue-root');
 createApp(DrawingPanel, { bridge }).mount('#drawing-panel-vue-root');
 createApp(EffectsPanel, { bridge }).mount('#effects-panel-vue-root');
+
+// ---- Строка «Текущая локация» (общий компонент с ГМ) ----
+const locationBadgeStore = reactive({ name: '' });
+createApp(LocationBadge, { store: locationBadgeStore }).mount('#location-badge-vue-root');
+window.locationBadgeApp = {
+  updateState(name) {
+    locationBadgeStore.name = name || '';
+  },
+};
 
 // ---- Бой ----
 // fxHolding/pendingCombatState — гейтинг обновлений на время анимации кубиков

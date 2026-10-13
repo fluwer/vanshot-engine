@@ -26,14 +26,17 @@ function undo() {
 
 <template>
   <div class="overlay-body">
-    <button class="fog-btn fog-toggle" :class="{ active: drawing }" @click="toggleDrawing">✏️ Рисовать</button>
-    <div class="fog-group">
-      <span class="fog-label">Инструмент</span>
-      <div class="row" style="gap:4px">
-        <button class="fog-btn draw-tool" :class="{ active: tool === 'pen' }" @click="setTool('pen')">Перо</button>
-        <button class="fog-btn draw-tool" :class="{ active: tool === 'eraser' }" @click="setTool('eraser')">Ластик</button>
+    <!-- Разметка и иконки — как во вкладке «Рисование» у ГМ (MapToolsPanel.vue);
+         title дублируется в aria-label: на тач-устройствах он не показывается. -->
+    <div class="tab-pane tab-pane-flex active">
+      <button class="fog-btn fog-toggle" :class="{ active: drawing }" @click="toggleDrawing">✏️ Рисовать</button>
+      <div class="fog-group">
+        <div class="row" style="gap:4px">
+          <button class="fog-btn draw-tool" :class="{ active: tool === 'pen' }" title="Перо" aria-label="Перо" @click="setTool('pen')">🖊️</button>
+          <button class="fog-btn draw-tool" :class="{ active: tool === 'eraser' }" title="Ластик — стирает только ваши линии" aria-label="Ластик" @click="setTool('eraser')">🧹</button>
+        </div>
       </div>
+      <button class="fog-btn wide" @click="undo">↩ Отменить моё действие</button>
     </div>
-    <button class="fog-btn wide" @click="undo">↩ Отменить моё действие</button>
   </div>
 </template>

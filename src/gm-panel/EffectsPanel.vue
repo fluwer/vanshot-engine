@@ -11,6 +11,9 @@ const TYPES = [
   { type: 'smoke', label: '💨 Дым' },
   { type: 'fire', label: '🔥 Огонь' },
   { type: 'firework', label: '🎆 Фейерверк' },
+  { type: 'explosion', label: '💥 Взрыв' },
+  { type: 'lightning', label: '⚡ Молния' },
+  { type: 'magic', label: '✨ Магия' },
 ];
 
 // Режим "заряжен" — не гасится после одного клика по карте (можно ставить
@@ -27,7 +30,7 @@ function toggle(type) {
 <template>
   <div class="overlay-body">
     <p class="muted small">Выберите эффект, затем кликните по карте — можно ставить несколько подряд.</p>
-    <div class="row" style="gap:4px">
+    <div class="vfx-grid">
       <button
         v-for="t in TYPES"
         :key="t.type"
