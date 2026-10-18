@@ -17,49 +17,48 @@
       <canvas id="map-canvas"></canvas>
     </div>
 
-    <button id="leave-session-btn" class="fog-btn leave-session-btn" title="Забыть сессию на этом устройстве">⎋ Выход</button>
-
-    <div id="location-badge-vue-root"></div>
-
-    <div class="overlay draggable-panel party-panel" id="party-panel">
-      <div class="overlay-head"><span>Отряд</span><span class="overlay-head-controls"></span></div>
-      <div id="party-panel-vue-root"></div>
+    <!-- Сверху по центру: текущая локация и (только в бою) полоса «Раунд/Ход» -->
+    <div class="hud-top">
+      <div id="location-badge-vue-root"></div>
+      <div id="combat-strip-vue-root"></div>
     </div>
 
-    <div class="overlay draggable-panel dicelog-panel" id="dicelog-panel">
-      <div class="overlay-head"><span>Лог бросков</span><span class="overlay-head-controls"></span></div>
-      <div id="dicelog-panel-vue-root"></div>
+    <!-- Отряд: компактная карточка справа сверху (сворачивается) -->
+    <div class="party-root" id="party-panel-vue-root"></div>
+
+    <!-- Блоки левой панели (public/js/dock.js): открыт максимум один, шапку добавляет Dock.
+         Vue-панели всегда смонтированы — скрывает их только CSS. -->
+    <div class="dock-block" id="character-panel">
+      <div class="dock-scroll">
+        <div id="sheet-drawer-vue-root"></div>
+        <div id="skills-drawer-vue-root"></div>
+      </div>
     </div>
 
-    <div class="overlay draggable-panel soundboard-panel" id="soundboard-panel">
-      <div class="overlay-head"><span>Саундборд</span><span class="overlay-head-controls"></span></div>
-      <div id="soundboard-panel-vue-root"></div>
-    </div>
-
-    <div class="overlay draggable-panel music-panel" id="music-panel">
-      <div class="overlay-head"><span>Музыка</span><span class="overlay-head-controls"></span></div>
-      <div id="music-panel-vue-root"></div>
-    </div>
-
-    <div class="overlay draggable-panel combat-panel" id="combat-indicator-panel">
-      <div class="overlay-head"><span>Бой</span><span class="overlay-head-controls"></span></div>
-      <div id="combat-indicator-vue-root"></div>
-    </div>
-
-    <div class="overlay draggable-panel drawing-panel" id="drawing-panel">
-      <div class="overlay-head"><span>Рисование</span><span class="overlay-head-controls"></span></div>
+    <div class="dock-block" id="drawing-panel">
       <div id="drawing-panel-vue-root"></div>
     </div>
 
-    <div class="overlay draggable-panel effects-panel" id="effects-panel">
-      <div class="overlay-head"><span>Эффекты</span><span class="overlay-head-controls"></span></div>
+    <div class="dock-block" id="effects-panel">
       <div id="effects-panel-vue-root"></div>
     </div>
 
-    <!-- Мои картинки: игрок правит свои принятые ГМ картинки (по умолчанию закрыта) -->
-    <div class="overlay draggable-panel images-panel" id="images-panel">
-      <div class="overlay-head"><span>Картинки</span><span class="overlay-head-controls"></span></div>
+    <!-- Мои картинки: игрок правит свои принятые ГМ картинки; пока блок открыт, режим правки включён -->
+    <div class="dock-block" id="images-panel">
       <div id="images-panel-vue-root"></div>
+    </div>
+
+    <div class="dock-block" id="sound-panel">
+      <div class="panel-tabs dock-tabs">
+        <button type="button" class="panel-tab active" data-tab="soundboard">🔊 Саундборд</button>
+        <button type="button" class="panel-tab" data-tab="music">🎵 Музыка</button>
+      </div>
+      <div class="dock-pane active" data-pane="soundboard">
+        <div id="soundboard-panel-vue-root"></div>
+      </div>
+      <div class="dock-pane" data-pane="music">
+        <div id="music-panel-vue-root"></div>
+      </div>
     </div>
 
     <!-- Кубики бросков: каждый бросок — свой d20, несколько одновременно (public/js/diceFx.js) -->
@@ -70,32 +69,30 @@
     <!-- Приветствие сцены (public/js/scenefx.js); внутри #app — до входа скрыто -->
     <div class="scene-intro-overlay" id="scene-intro-overlay" role="dialog" aria-modal="true"></div>
 
-    <div class="chat-panel" id="chat-panel-vue-root"></div>
-
-    <!-- Нижняя панель действий -->
-    <div class="action-rail" id="action-rail-vue-root"></div>
-
-    <div class="bottom-bar">
-      <button class="drawer-btn" data-drawer="sheet-drawer">Персонаж ▲</button>
-      <button class="drawer-btn" data-drawer="skills-drawer">Навыки/Инвентарь ▲</button>
-      <button class="drawer-btn" data-drawer="tools-drawer">Инструменты ▲</button>
+    <!-- Журнал: чат + броски (public/js/journal.js) -->
+    <div class="journal-peek" id="journal-peek" aria-live="polite"></div>
+    <div class="journal" id="journal-panel">
+      <div class="dock-head">
+        <span class="dock-title">Журнал</span>
+        <button type="button" class="dock-close" title="Закрыть (Esc)" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="panel-tabs dock-tabs">
+        <button type="button" class="panel-tab active" data-tab="chat">💬 Чат</button>
+        <button type="button" class="panel-tab" data-tab="dice">🎲 Броски</button>
+      </div>
+      <div class="dock-pane active" data-pane="chat">
+        <div id="chat-panel-vue-root"></div>
+      </div>
+      <div class="dock-pane" data-pane="dice">
+        <div id="dicelog-panel-vue-root"></div>
+      </div>
     </div>
+    <button type="button" class="journal-btn" id="journal-btn" title="Журнал: чат и броски" aria-label="Журнал: чат и броски" aria-pressed="false">
+      <span>💬</span><span class="journal-badge" id="journal-badge" hidden></span>
+    </button>
 
-    <!-- Выдвижные ящики -->
-    <div class="drawer" id="sheet-drawer">
-      <div id="sheet-drawer-vue-root"></div>
-    </div>
-
-    <div class="drawer" id="skills-drawer">
-      <div class="drawer-head"><h2>Навыки и инвентарь</h2><button class="drawer-close" data-close="skills-drawer">✕</button></div>
-      <div id="skills-drawer-vue-root"></div>
-    </div>
-
-    <div class="drawer" id="tools-drawer">
-      <div class="drawer-head"><h2>Окна</h2><button class="drawer-close" data-close="tools-drawer">✕</button></div>
-      <div class="tools-panel-list" id="tools-drawer-list"></div>
-      <button type="button" class="tools-toggle-btn tools-reset-btn" id="tools-reset-layout" title="Вернуть окна на места по умолчанию, если какое-то потерялось">↺ Сбросить расположение окон</button>
-    </div>
+    <!-- Нижняя панель: броски атрибутов -->
+    <div class="action-bar" id="action-rail-vue-root"></div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
@@ -108,7 +105,8 @@
   <script src="js/soundboard.js"></script>
   <script src="js/music.js"></script>
   <script src="js/chat.js"></script>
-  <script src="js/panelDrag.js"></script>
+  <script src="js/dock.js"></script>
+  <script src="js/journal.js"></script>
   <script src="js/player.js"></script>
   <script src="dist/player-panel.js"></script>
 </body>

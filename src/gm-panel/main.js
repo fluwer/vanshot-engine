@@ -10,6 +10,7 @@ import ChatPanel from './ChatPanel.vue';
 import EffectsPanel from './EffectsPanel.vue';
 import LocationBadge from './LocationBadge.vue';
 import ImageProposals from './ImageProposals.vue';
+import CombatStrip from './CombatStrip.vue';
 
 // gm.js (обычный не-модульный скрипт) грузится раньше этого бандла и
 // успевает выставить window.gmSocket/window.gmBridge синхронно при загрузке
@@ -89,8 +90,12 @@ window.combatPanelApp = {
   },
 };
 createApp(CombatPanel, { store: combatStore, selection: store, bridge }).mount('#combat-panel-vue-root');
+// Полоса «Раунд/Ход» сверху по центру — тот же store, видна только в бою.
+createApp(CombatStrip, { store: combatStore }).mount('#combat-strip-vue-root');
 
-// ---- Инструменты карты (туман/картинки/рисование) ----
+// ---- Инструменты карты (туман/картинки/рисование/локации) ----
+// Один блок на четыре пункта левой панели (Dock): вкладку и режим карты выбирает
+// открытый пункт (см. MapToolsPanel.vue, useDock.js).
 const mapToolsStore = reactive({ mapImages: [], locations: [], activeLocationId: null });
 createApp(MapToolsPanel, { store: mapToolsStore, bridge }).mount('#maptools-panel-vue-root');
 window.mapToolsPanelApp = {
@@ -103,7 +108,7 @@ window.mapToolsPanelApp = {
 
 // ---- Строка «Текущая локация» ----
 const locationBadgeStore = reactive({ name: '' });
-createApp(LocationBadge, { store: locationBadgeStore }).mount('#location-badge-vue-root');
+createApp(LocationBadge, { store: locationBadgeStore, clickable: true }).mount('#location-badge-vue-root');
 window.locationBadgeApp = {
   updateState(name) {
     locationBadgeStore.name = name || '';
@@ -131,7 +136,7 @@ window.imageProposalsApp = {
 };
 socket.emit('mapimage:pending', {}, (list) => window.imageProposalsApp.sync(list));
 
-// ---- Верхняя панель (DC) ----
+// ---- Нижняя панель, правая часть (DC, бросок мастера, восстановление) ----
 const topBarStore = reactive({ currentDc: 0 });
 createApp(TopBarPanel, { store: topBarStore, bridge }).mount('#topbar-vue-root');
 window.dcControlsPanelApp = {
@@ -140,11 +145,11 @@ window.dcControlsPanelApp = {
   },
 };
 
-// ---- Бросок за выбранного персонажа (action-rail) ----
+// ---- Бросок за выбранного персонажа (нижняя панель, левая часть) ----
 // Переиспользует тот же store, что и CharactersPanel (characters/npcs/selected).
 createApp(GmAttributesPanel, { store, bridge }).mount('#action-rail-vue-root');
 
-// ---- Чат ----
+// ---- Чат (вкладка «Чат» журнала, см. public/js/journal.js) ----
 createApp(ChatPanel, { bridge, gmControls: true }).mount('#chat-panel-vue-root');
 
 // ---- Спецэффекты (дым/огонь/фейерверк) ----

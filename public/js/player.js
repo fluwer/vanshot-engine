@@ -98,6 +98,7 @@ function clearSession() {
 socket.on('connect', () => {
   if (mapController) mapController.skipNextTokenAnimation(); // после реконнекта позиции — без проигрывания ходьбы
   window.diceFx.skipNext(); // и старые броски из лога — без повторного проигрывания
+  window.journal.skipNext(); // и старые чат-сообщения — без «непрочитанных» и всплывашек
   const saved = loadSession();
   if (!saved) {
     socket.emit('join', { role: 'observer' });
@@ -128,9 +129,6 @@ function onJoined({ characterId, name }) {
 
   joinForm.classList.add('hidden');
   app.classList.remove('hidden');
-  // Окна измерить можно только теперь (до входа #app скрыт, размеры нулевые): вернуть в
-  // экран те, чьи сохранённые/дефолтные позиции его не вмещают.
-  window.PanelDrag.clampAll();
 
   mapController = createMapController({
     canvas: document.getElementById('map-canvas'),
@@ -254,14 +252,14 @@ window.playerBridge = {
   clearSession,
 };
 
-// Кнопка «Выход из сессии» — сбрасывает сохранённые код/имя/персонажа и
-// перезагружает страницу; после этого connect уйдёт в обычный observer-флоу
-// с пустой формой входа.
-document.getElementById('leave-session-btn')?.addEventListener('click', () => {
+// «Выход из сессии» (кнопка внизу левой панели, см. Dock.init ниже) — сбрасывает
+// сохранённые код/имя/персонажа и перезагружает страницу; после этого connect
+// уйдёт в обычный observer-флоу с пустой формой входа.
+function leaveSession() {
   if (!confirm('Выйти из сессии? Понадобится код доступа, чтобы зайти снова.')) return;
   clearSession();
   location.reload();
-});
+}
 
 // Пробел телепортирует камеру к своему персонажу — игнорируем, если фокус
 // на текстовом поле (например, в чате), чтобы не мешать вводу пробела.
@@ -274,84 +272,21 @@ document.addEventListener('keydown', (e) => {
   mapController.centerOnMyCharacter();
 });
 
-// --- Выдвижные ящики и сворачиваемые оверлеи -----------------------------
-document.querySelectorAll('.drawer-btn').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    const drawer = document.getElementById(btn.dataset.drawer);
-    const wasOpen = drawer.classList.contains('open');
-    document.querySelectorAll('.drawer').forEach((d) => d.classList.remove('open'));
-    document.querySelectorAll('.drawer-btn').forEach((b) => b.classList.remove('active'));
-    if (!wasOpen) {
-      drawer.classList.add('open');
-      btn.classList.add('active');
-    }
-  });
-});
-// Делегирование на document (а не querySelectorAll+forEach в момент
-// загрузки): кнопка закрытия sheet-drawer теперь рендерится Vue-компонентом
-// (SheetDrawerPanel.vue) позже, чем выполняется этот скрипт, — прямой
-// addEventListener на неё в этот момент ничего бы не нашёл.
-document.addEventListener('click', (e) => {
-  const closeBtn = e.target.closest('.drawer-close');
-  if (!closeBtn) return;
-  document.getElementById(closeBtn.dataset.close).classList.remove('open');
-  document.querySelectorAll('.drawer-btn').forEach((b) => b.classList.remove('active'));
-});
-// ---- Плавающие панели (Отряд/Лог/Саундборд/Музыка/Бой/Рисование/Эффекты) --
-// Драг/resize/сворачивание/закрытие/персистентность — в общем panelDrag.js
-// (переиспользуется и gm.js). У игрока, в отличие от ГМ, панели ещё и
-// закрываемые (closable) и по умолчанию (только при первом визите, пока
-// нет сохранённого состояния) часть панелей скрыта — см. DEFAULT_OPEN_PANELS.
-const DEFAULT_OPEN_PANELS = new Set(['party-panel', 'dicelog-panel', 'combat-indicator-panel']);
-document.querySelectorAll('#app .draggable-panel').forEach((panel) => {
-  PanelDrag.makeDraggable(panel, {
-    storagePrefix: 'playerPanel',
-    closable: true,
-    defaultOpen: DEFAULT_OPEN_PANELS.has(panel.id),
-  });
+// --- Левая панель инструментов (public/js/dock.js) -------------------------
+// Открыт максимум один блок; пункты draw/vfx/images — инструменты карты: пока блок
+// открыт, режим включён (его ведут сами Vue-панели по событию dock:change,
+// src/gm-panel/useDock.js). Журнал (чат + броски) и «Отряд» — отдельные слоты.
+Dock.init({
+  items: [
+    { id: 'character', icon: '🧍', label: 'Персонаж', title: 'Персонаж, навыки и инвентарь', block: 'character-panel', group: 0 },
+    { id: 'draw', icon: '✏️', label: 'Рисунок', title: 'Рисование', block: 'drawing-panel', group: 1 },
+    { id: 'vfx', icon: '✨', label: 'Эффекты', title: 'Спецэффекты', block: 'effects-panel', group: 1 },
+    { id: 'images', icon: '🖼️', label: 'Картинки', title: 'Мои картинки', block: 'images-panel', group: 1 },
+    { id: 'sound', icon: '🔊', label: 'Звук', title: 'Звук', block: 'sound-panel', group: 2 },
+    { id: 'leave', icon: '⎋', label: 'Выход', title: 'Забыть сессию на этом устройстве', action: leaveSession, bottom: true },
+  ],
 });
 
-// Ящик «Инструменты» — список всех панелей с возможностью открыть/закрыть;
-// подпись берём из самой панели, чтобы не дублировать русский текст ещё раз.
-// Кнопки НЕ носят класс .drawer-btn (только свой .tools-toggle-btn с тем же
-// видом, см. style.css) — иначе общий обработчик ящиков выше при каждом
-// клике сбрасывает .active со ВСЕХ .drawer-btn и стирает подсветку.
-const toolsList = document.getElementById('tools-drawer-list');
-const toolsSyncFns = [];
-document.querySelectorAll('#app .draggable-panel').forEach((panel) => {
-  const label = panel.querySelector('.overlay-head > span')?.textContent ?? panel.id;
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'tools-toggle-btn';
-  btn.textContent = label;
-  const sync = () => btn.classList.toggle('active', !panel.classList.contains('panel-closed'));
-  sync();
-  toolsSyncFns.push(sync);
-  btn.addEventListener('click', () => {
-    if (panel.classList.contains('panel-closed')) {
-      PanelDrag.showPanel(panel, 'playerPanel');
-    } else {
-      panel.classList.add('panel-closed');
-      PanelDrag.savePanelState(panel, 'playerPanel', { closed: true });
-    }
-    sync();
-  });
-  toolsList.appendChild(btn);
-});
-// Панель могла закрыться и в обход этой кнопки — через свой крестик
-// (panelDrag.js). Пересинхронизируем подсветку при каждом открытии/закрытии
-// самого ящика «Инструменты», чтобы не полагаться на память конкретной кнопки.
-document.querySelector('.drawer-btn[data-drawer="tools-drawer"]')?.addEventListener('click', () => {
-  toolsSyncFns.forEach((fn) => fn());
-});
-// «Сбросить расположение окон»: позиции, размеры, свёрнутость и набор открытых
-// окон по умолчанию — без перезагрузки страницы (перезагрузка заново показала бы
-// приветствие сцены и перезапустила музыку).
-document.getElementById('tools-reset-layout')?.addEventListener('click', () => {
-  PanelDrag.resetLayout('playerPanel', { resetOpen: true });
-  toolsSyncFns.forEach((fn) => fn());
-  window.imageTools.notify('Окна возвращены на места', 'ok');
-});
 
 function requestReachable() {
   if (!myCharacterId || !mapController) return;
@@ -372,6 +307,7 @@ socket.on('state', (state) => {
   window.locationBadgeApp?.updateState(state.activeLocationName);
   window.imagesPanelApp?.updateState(state.mapImages);
   renderChat(state.chat);
+  window.journal.onState(state); // непрочитанные и всплывашки чата (public/js/journal.js)
   window.combatPanelApp?.updateState(state.combat, state.npcs || []);
   applyMusicState(state.music);
 

@@ -22,7 +22,7 @@ const activeEntity = computed(() => {
 });
 
 const labelText = computed(() => (
-  activeEntity.value ? `Бросок за ${activeEntity.value.name}:` : 'Бросок за персонажа: выберите на карте'
+  activeEntity.value ? `Бросок за ${activeEntity.value.name}:` : 'Бросок: выберите фишку на карте'
 ));
 
 function attrSign(value) {

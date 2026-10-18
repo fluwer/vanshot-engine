@@ -82,10 +82,11 @@ mapController.setSelectHandler(() => {
 // capture-фазе — не зависит от @click.stop в Vue-панелях. Исключения — зоны,
 // где выбор как раз нужен или меняется самим кликом:
 //  - карта (#map-canvas): тап сам решает — выбрать / снять / пойти;
-//  - нижняя панель броска и верхняя панель (DC ставят перед броском);
+//  - нижняя панель (бросок за выбранного, DC ставят перед броском);
 //  - тело карточек участников и строки боя: у них свой toggle по клику, а вот
 //    кнопки/поля ВНУТРИ них (HP, урон, ☠ и т.п.) — уже «действие» и сбрасывают.
-const KEEP_SELECTION_ZONES = '#map-canvas, .action-rail, .gm-top-bar';
+// Кнопки левой панели (Dock) — тоже «действие»: открытие инструмента сбрасывает выбор.
+const KEEP_SELECTION_ZONES = '#map-canvas, .action-bar';
 const KEEP_SELECTION_CARDS = '.char-mini, .npc-mini, .combat-turn-row';
 const KEEP_SELECTION_CONTROLS = 'button, input, label, select, textarea';
 document.addEventListener('pointerdown', (e) => {
@@ -127,6 +128,7 @@ socket.on('vfx:play', ({ type, x, y }) => mapController.playEffect(type, x, y));
 socket.on('connect', () => {
   mapController.skipNextTokenAnimation(); // после реконнекта позиции — без проигрывания ходьбы
   window.diceFx.skipNext(); // и старые броски из лога — без повторного проигрывания
+  window.journal.skipNext(); // и старые чат-сообщения — без «непрочитанных» и всплывашек
   socket.emit('join', { role: 'gm', name: 'Мастер' });
 });
 
@@ -146,10 +148,23 @@ initCombatStartFx(socket, {
   onEnd: () => window.combatPanelApp?.setFxHolding(false),
 });
 
-// ---- Плавающие окна: перетаскивание/сворачивание/персистентность вынесены
-// в общий public/js/panelDrag.js (переиспользуется и player.js) ----
-document.querySelectorAll('.draggable-panel').forEach((p) =>
-  PanelDrag.makeDraggable(p, { storagePrefix: 'gmPanel' }));
+// ---- Левая панель инструментов (public/js/dock.js): открыт максимум один блок.
+// Туман/рисунок/картинки/локации — разные пункты одного блока карты; пункты-
+// инструменты (fog/draw/images/vfx) включают режим карты, пока блок открыт —
+// это делают сами Vue-панели по событию dock:change (src/gm-panel/useDock.js).
+// «Участники» — отдельная правая колонка, открыта вместе с любым блоком. ----
+Dock.init({
+  items: [
+    { id: 'fog', icon: '🌫️', label: 'Туман', title: 'Туман войны', block: 'maptools-panel', group: 0 },
+    { id: 'draw', icon: '✏️', label: 'Рисунок', title: 'Рисование', block: 'maptools-panel', group: 0 },
+    { id: 'images', icon: '🖼️', label: 'Картинки', title: 'Картинки на карте', block: 'maptools-panel', group: 0 },
+    { id: 'vfx', icon: '✨', label: 'Эффекты', title: 'Спецэффекты', block: 'effects-panel', group: 0 },
+    { id: 'locations', icon: '🗺️', label: 'Локации', title: 'Локации', block: 'maptools-panel', group: 1 },
+    { id: 'combat', icon: '⚔️', label: 'Бой', title: 'Бой', block: 'combat-panel', group: 1 },
+    { id: 'sound', icon: '🔊', label: 'Звук', title: 'Звук', block: 'sound-panel', group: 1 },
+  ],
+  side: { id: 'characters-panel', title: 'Участники' },
+});
 
 function requestReachable() {
   const target = mapController.getSelectedTarget();
@@ -172,6 +187,7 @@ socket.on('state', (state) => {
   applyMusicState(state.music);
   mapController.updateState(state);
   requestReachable();
+  window.journal.onState(state);  // журнал: непрочитанные и всплывашки чата (public/js/journal.js)
   window.diceFx.onState(state);   // кубики: все новые броски, параллельно (public/js/diceFx.js)
   window.sceneFx.onState(state);  // приветствие сцены: при загрузке и при смене локации (public/js/scenefx.js)
 });

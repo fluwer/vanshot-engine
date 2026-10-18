@@ -5,7 +5,7 @@ import SheetDrawerPanel from './SheetDrawerPanel.vue';
 import SkillsInventoryPanel from './SkillsInventoryPanel.vue';
 import DiceLogPanel from '../gm-panel/DiceLogPanel.vue';
 import ChatPanel from '../gm-panel/ChatPanel.vue';
-import CombatIndicatorPanel from './CombatIndicatorPanel.vue';
+import CombatStrip from '../gm-panel/CombatStrip.vue';
 import SoundboardPanel from './SoundboardPanel.vue';
 import MusicPanel from './MusicPanel.vue';
 import DrawingPanel from './DrawingPanel.vue';
@@ -54,8 +54,8 @@ createApp(DrawingPanel, { bridge }).mount('#drawing-panel-vue-root');
 createApp(EffectsPanel, { bridge }).mount('#effects-panel-vue-root');
 
 // ---- Мои картинки: игрок правит СВОИ картинки на карте (после «Принять» ГМ) ----
-// Данные кормит player.js (state.mapImages, выбор картинки на канвасе). Панель по
-// умолчанию закрыта — открывается сама после принятия картинки (focus).
+// Данные кормит player.js (state.mapImages, выбор картинки на канвасе). Блок по
+// умолчанию закрыт — открывается сам после принятия картинки (focus).
 const imagesStore = reactive({ images: [], myCharacterId: null, selectedId: null, editing: false });
 createApp(MyImagesPanel, { store: imagesStore, bridge }).mount('#images-panel-vue-root');
 window.imagesPanelApp = {
@@ -68,14 +68,12 @@ window.imagesPanelApp = {
   setSelected(id) {
     imagesStore.selectedId = id;
   },
-  // После «Принять»: открыть панель, включить режим правки, выделить картинку и показать её.
+  // После «Принять»: открыть блок «Картинки» (режим правки включит сама панель по
+  // dock:change, см. MyImagesPanel.vue), выделить картинку и показать её.
   focus(id) {
     const mc = bridge.mapController;
-    const panel = document.getElementById('images-panel');
-    if (panel) window.PanelDrag.showPanel(panel, 'playerPanel');
+    window.Dock.open('images');
     if (!mc) return;
-    mc.setImageEditMode(true);
-    imagesStore.editing = true;
     mc.selectMapImage(id);
     imagesStore.selectedId = id;
     const img = imagesStore.images.find((m) => m.id === id);
@@ -116,4 +114,5 @@ window.combatPanelApp = {
     }
   },
 };
-createApp(CombatIndicatorPanel, { store: combatStore }).mount('#combat-indicator-vue-root');
+// Полоса «Раунд/Ход» сверху по центру — видна только в бою (общий компонент с ГМ).
+createApp(CombatStrip, { store: combatStore }).mount('#combat-strip-vue-root');

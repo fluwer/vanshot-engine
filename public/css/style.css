@@ -180,95 +180,135 @@ input, select {
 .map-stage { position: fixed; inset: 0; overflow: hidden; }
 .map-stage .map-scroll { position: absolute; inset: 0; border: none; border-radius: 0; }
 
-.overlay {
-  position: absolute;
-  background: rgba(18, 20, 26, 0.86);
-  border: 1px solid #333a4a;
-  border-radius: 8px;
-  backdrop-filter: blur(2px);
-  font-size: 13px;
-  z-index: 5;
-  overflow: hidden;
-}
-.overlay-head {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 5px 8px; cursor: pointer; color: #9aa3b8;
-  font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em;
-  user-select: none;
-}
+/* ================= Dock: левая панель инструментов + блоки (public/js/dock.js) =================
+   Слоты .map-stage: левая панель и блок (z 7), журнал (7), нижняя панель (6), правая
+   колонка ГМ (5), .hud-top (4); кубики — 8 (.dfx-layer). Блок открыт максимум один.
+   --side-w — ширина колонки ГМ (0, если свёрнута/нет): от неё сдвигаются журнал и
+   центр нижней панели, чтобы ничего не накладывалось. */
+.map-stage { --side-w: 0px; --rail-w: 72px; }
+.map-stage.side-open { --side-w: 328px; }
+
 .overlay-body { padding: 5px 8px; max-height: 30vh; overflow-y: auto; }
-.overlay .chevron { transition: transform 0.2s; }
-.overlay.collapsed .overlay-body { display: none; }
-.overlay.collapsed .chevron { transform: rotate(-90deg); }
 
-.leave-session-btn { position: absolute; top: 8px; left: 8px; z-index: 5; }
-
-/* ---- Игрок: плавающие окна (та же механика, что у .draggable-panel
-   мастера, — эти классы раньше задавали flex-раскладку внутри .hud-right,
-   теперь задают дефолтную позицию/размер самого плавающего окна) ---- */
-.party-panel      { top: 8px;   right: 8px;   width: 260px; }
-.dicelog-panel    { top: 8px;   right: 276px; width: 280px; height: 260px; }
-.combat-panel     { top: 8px;   right: 564px; width: 260px; }
-.soundboard-panel { top: 340px; right: 8px;   width: 260px; }
-.music-panel      { top: 340px; right: 276px; width: 260px; }
-.drawing-panel    { top: 500px; right: 8px;   width: 260px; height: 220px; }
-.effects-panel    { top: 500px; right: 276px; width: 220px; }
-.images-panel     { top: 500px; right: 504px; width: 260px; height: 260px; }
-
-.panel-closed { display: none !important; }
-.overlay-head-controls { display: flex; align-items: center; gap: 6px; }
-.panel-close-btn {
-  background: transparent; border: none; padding: 0 2px;
-  font-size: 12px; color: #9aa3b8; cursor: pointer; line-height: 1;
+/* ---- Левая панель ---- */
+.dock-rail {
+  position: absolute; left: 8px; top: 8px; bottom: 8px; z-index: 7;
+  display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start;
+  pointer-events: none; /* пустое место панели не перехватывает клики по карте */
 }
-.panel-close-btn:hover { color: #e0e4ee; }
-.tools-panel-list { display: flex; flex-direction: column; gap: 6px; }
-/* Своя, а не .drawer-btn: кнопки списка панелей должны красится так же, как
-   кнопки-ящики снизу, но НЕ должны совпадать с селектором .drawer-btn в
-   player.js (иначе общий обработчик открытия ящиков сбрасывает .active со
-   всех .drawer-btn при каждом клике и стирает подсветку активных панелей). */
-.tools-toggle-btn {
-  border-radius: 8px; background: #232836; font-size: 13px;
-  border: 1px solid #333a4a; padding: 8px 14px; text-align: left; cursor: pointer;
+.dock-rail-card {
+  pointer-events: auto; width: 56px; padding: 4px;
+  display: flex; flex-direction: column; gap: 2px;
+  background: rgba(18, 20, 26, 0.92); border: 1px solid #333a4a; border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
-.tools-toggle-btn:hover { background: #2c3346; }
-.tools-reset-btn { margin-top: 8px; width: 100%; font-size: 12px; color: #aeb6c9; }
-.tools-toggle-btn.active { background: #3a4a6b; border-color: #5a7bd8; }
-
-/* ---- Мастер: нижняя панель-подвал (DC, бросок мастера, восстановление) ---- */
-.gm-top-bar { bottom: 8px; left: 50%; transform: translateX(-50%); padding: 4px 10px; font-size: 12px; }
-.gm-top-bar button { padding: 4px 9px; font-size: 12px; }
-.gm-top-bar input { padding: 4px 8px; }
-
-/* ---- Мастер: плавающие окна (можно перетащить за заголовок) ---- */
-.draggable-panel {
-  display: flex; flex-direction: column; min-height: 0;
-  /* Не больше сцены (.map-stage): широкое/высокое окно сжимается под экран, а не
-     уходит за край (clamp позиции — panelDrag.js, clampPanelIntoViewport). */
-  max-height: calc(100% - 16px); max-width: calc(100% - 16px); width: 320px;
-  resize: both;
-  min-width: 240px; min-height: 120px;
+.dock-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 1px; width: 100%;
+  padding: 5px 0 4px; background: transparent; border: 1px solid transparent;
+  border-radius: 8px; color: #aeb6c9;
 }
-.draggable-panel .overlay-head { cursor: move; }
-.draggable-panel .overlay-body { flex: 1; min-height: 0; max-height: none; overflow-y: auto; }
-.draggable-panel.collapsed { max-height: none; min-height: 0; resize: none; }
-/* Vue-компоненты монтируются в плоский <div id="*-panel-vue-root">, который
-   встаёт между .draggable-panel и .overlay-body — без display:flex здесь
-   .overlay-body's flex:1/min-height:0 выше ни на что не влияет, и контент
-   просто обрезается overflow:hidden у .overlay вместо скролла. */
-.draggable-panel > [id$="-vue-root"] {
-  display: flex; flex-direction: column; flex: 1; min-height: 0;
+.dock-btn:hover { background: #232836; color: #e8ecf5; }
+.dock-btn.active { background: #3a4a6b; border-color: #5a7bd8; color: #fff; }
+.dock-ico { font-size: 20px; line-height: 1; }
+.dock-lbl { font-size: 10px; line-height: 1.1; }
+.dock-sep { height: 1px; margin: 3px 6px; background: #333a4a; }
+
+/* ---- Блок рядом с панелью (один за раз) ---- */
+.dock-block {
+  position: absolute; left: var(--rail-w); top: 8px; width: 320px;
+  /* снизу всегда свободна полоса под нижнюю панель; дальше — скролл внутри */
+  max-height: calc(100% - 72px); z-index: 7;
+  display: none; flex-direction: column; overflow: hidden; font-size: 13px;
+  background: rgba(24, 27, 36, 0.97); border: 1px solid #333a4a; border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.dock-block.dock-open { display: flex; animation: dockIn 0.14s ease; }
+@keyframes dockIn { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .dock-block.dock-open { animation: none; } }
+.dock-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 10px 6px 12px; flex-shrink: 0;
+}
+.dock-title { font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: #9aa3b8; }
+.dock-close { background: transparent; color: #9aa3b8; padding: 2px 8px; font-size: 14px; line-height: 1; }
+.dock-close:hover { background: #2c3346; color: #fff; }
+/* Vue-компоненты монтируются в плоский <div id="*-vue-root">, который встаёт между
+   блоком и .overlay-body — без display:flex цепочка flex/скролла ломается и контент
+   просто обрезается overflow:hidden. */
+.dock-block > [id$="-vue-root"],
+.dock-side > [id$="-vue-root"],
+.dock-pane > [id$="-vue-root"] { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.dock-block .overlay-body,
+.dock-side .overlay-body { flex: 1; min-height: 0; max-height: none; overflow-y: auto; }
+.dock-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 0 12px 12px; }
+.dock-pane { display: none; }
+.dock-pane.active { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.dock-block input[type=range] { width: 100%; margin: 0; }
+.dock-block select {
+  width: 100%; padding: 5px 8px; background: #232836; border: 1px solid #333a4a;
+  color: #c8cfdd; border-radius: 6px; font-size: 12px;
 }
 
-.panel-characters { top: 8px; left: 8px; width: 320px; }
-/* height — дефолт на ~6-7 строк лога, чтобы не разрасталась на весь экран;
-   дальше скролл внутри (.overlay-body), либо тянуть за правый нижний угол
-   (resize:both у .draggable-panel) — размер после этого запоминается, см. gm.js. */
-.panel-dicelog     { top: 8px; right: 8px; width: 300px; height: 260px; }
-.panel-maptools    { top: 8px; right: 316px; width: 270px; }
-.panel-sound       { top: 8px; right: 554px; width: 260px; }
-.panel-combat      { top: 316px; right: 8px; width: 280px; }
-.panel-effects     { top: 316px; right: 296px; width: 220px; }
+/* ---- Правая колонка ГМ («Участники») ---- */
+.dock-side {
+  position: absolute; right: 8px; top: 8px; width: 320px; max-height: calc(100% - 72px); z-index: 5;
+  display: none; flex-direction: column; overflow: hidden; font-size: 13px;
+  background: rgba(24, 27, 36, 0.95); border: 1px solid #333a4a; border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+/* Колонка постоянно на виду — карточки участников плотнее, чем в модалках/блоках */
+.dock-side .card.compact { margin-bottom: 6px; }
+.map-stage.side-open .dock-side { display: flex; }
+.dock-side-toggle {
+  position: absolute; right: 8px; top: 8px; z-index: 5; padding: 6px 9px; font-size: 16px;
+  background: rgba(18, 20, 26, 0.92); border: 1px solid #333a4a; border-radius: 10px;
+}
+.map-stage.side-open .dock-side-toggle { display: none; }
+
+/* ---- Сверху по центру: локация и полоса боя ---- */
+.hud-top {
+  position: absolute; top: 8px; z-index: 4;
+  left: calc(var(--rail-w) + (100% - var(--rail-w) - var(--side-w)) / 2); transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  max-width: 36vw; pointer-events: none;
+}
+/* Узкий экран (≤1200px): по центру верхняя плашка попала бы под левый блок (320px) —
+   прижимаем её к правому краю блока, чтобы они не накладывались. */
+@media (max-width: 1200px) {
+  .hud-top {
+    left: calc(var(--rail-w) + 336px); transform: none; align-items: flex-start;
+    max-width: calc(100% - var(--rail-w) - 336px - var(--side-w) - 24px);
+  }
+}
+.combat-strip {
+  pointer-events: auto; min-width: 220px; max-width: 360px;
+  background: rgba(18, 20, 26, 0.92); border: 1px solid #5a7bd8; border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.combat-strip-head {
+  display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%;
+  padding: 5px 12px; background: transparent; color: #e8ecf5; font-size: 13px;
+}
+.combat-strip-head:hover { background: rgba(58, 74, 107, 0.35); border-radius: 10px; }
+.combat-strip-chevron { color: #9aa3b8; }
+.combat-strip-list { padding: 2px 8px 8px; max-height: 40vh; overflow-y: auto; }
+
+/* ---- Нижняя панель действий (бросок за выбранного, DC, бросок мастера) ---- */
+.action-bar {
+  /* Центр — в свободной области без полосы кнопки журнала справа (60px), чтобы панель
+     не наезжала на 💬; шире — переносится на две строки. */
+  position: absolute; bottom: 8px; z-index: 6;
+  left: calc(var(--rail-w) + (100% - var(--rail-w) - var(--side-w) - 60px) / 2); transform: translateX(-50%);
+  display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 10px;
+  width: max-content; max-width: calc(100% - var(--rail-w) - var(--side-w) - 76px);
+  padding: 6px 12px; background: rgba(18, 20, 26, 0.92); border: 1px solid #333a4a; border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.action-bar-group { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.action-bar-group + .action-bar-group { padding-left: 12px; border-left: 1px solid #333a4a; }
+.action-bar-group button { padding: 4px 9px; font-size: 12px; }
+.action-bar-group input { padding: 4px 8px; }
+
 
 /* ---- Боевой режим: выбор участников, порядок хода ---- */
 .combat-pick-list { display: flex; flex-direction: column; gap: 1px; max-height: 200px; overflow-y: auto; }
@@ -317,21 +357,12 @@ input, select {
 .fog-toggle { width: 100%; }
 .fog-toggle.active { background: #4a3a3a; border-color: #d86a5a; color: #fff; }
 .fog-hint { margin: 0; line-height: 1.3; }
-.hint-icon { cursor: help; opacity: .55; font-size: 12px; margin-left: auto; flex-shrink: 0; }
-.hint-icon:hover { opacity: 1; }
 .npc-faction-btn { flex: 0 0 auto; min-width: 34px; text-align: center; }
 
 /* ---- Панель спецэффектов: кнопки сеткой 2 в ряд (их шесть, «🎆 Фейерверк» в трёх колонках не влезает) ---- */
 .vfx-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
 
-/* ---- Музыка (плеер, всегда используется вместе с .music-panel в player.html) ---- */
-.music-panel select {
-  width: 100%; padding: 5px 8px; background: #232836; border: 1px solid #333a4a;
-  color: #c8cfdd; border-radius: 6px; font-size: 12px;
-}
-.music-panel input[type=range] { width: 100%; margin: 0; }
-
-/* ---- Вкладки внутри плавающих панелей ГМ (Карта, Звук): общая раскладка ---- */
+/* ---- Вкладки внутри блоков (Карта, Звук): общая раскладка ---- */
 .tab-pane-flex input[type=range] { width: 100%; margin: 0; }
 .tab-pane-flex select {
   width: 100%; padding: 5px 8px; background: #232836; border: 1px solid #333a4a;
@@ -362,17 +393,17 @@ input, select {
 .fog-btn:disabled { opacity: .4; cursor: default; }
 .fog-btn:disabled:hover { background: #232836; }
 
-/* ---- Строка «Текущая локация» (ГМ и игрок): над картой, клики пропускает ---- */
+/* ---- Строка «Текущая локация» (ГМ и игрок): в .hud-top, клики пропускает; у ГМ
+   кликабельна (открывает пункт «Локации») ---- */
 .location-badge {
-  position: absolute; top: 8px; left: 336px; z-index: 4; pointer-events: none;
-  max-width: 30vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  padding: 4px 10px; border-radius: 8px; font-size: 13px; color: #e0e4ee;
+  pointer-events: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 4px 12px; border-radius: 8px; font-size: 13px; color: #e0e4ee;
   background: rgba(18, 20, 26, 0.86); border: 1px solid #333a4a;
 }
-/* У игрока слева сверху стоит кнопка «Выход» — бейдж правее неё */
-#app .location-badge { left: 96px; }
+.location-badge.clickable { pointer-events: auto; cursor: pointer; }
+.location-badge.clickable:hover { border-color: #5a7bd8; }
 
-/* ---- Вкладки внутри плавающих панелей ГМ (Участники, Карта, Звук) ---- */
+/* ---- Вкладки внутри блоков (Участники, Карта, Звук, Журнал) ---- */
 .panel-tabs { display: flex; gap: 4px; padding: 0 8px 5px; flex-shrink: 0; }
 .panel-tab {
   flex: 1; background: #232836; border: 1px solid #333a4a; color: #9aa3b8;
@@ -380,8 +411,6 @@ input, select {
 }
 .panel-tab:hover { background: #2c3346; }
 .panel-tab.active { background: #3a4a6b; border-color: #5a7bd8; color: #fff; }
-.overlay.collapsed .panel-tabs,
-.overlay.collapsed .sound-panel-toolbar { display: none; }
 .tab-pane { display: none; }
 .tab-pane.active { display: block; }
 .tab-pane.tab-pane-flex.active { display: flex; flex-direction: column; gap: 8px; }
@@ -484,7 +513,7 @@ input, select {
 
 /* ---- Тосты (public/js/imagetools.js, notify) ---- */
 .toast-host {
-  position: fixed; top: 56px; left: 50%; transform: translateX(-50%); z-index: 60;
+  position: fixed; top: 96px; left: 50%; transform: translateX(-50%); z-index: 60;
   display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none;
 }
 .toast {
@@ -500,7 +529,7 @@ input, select {
 /* ---- Игроки предлагают картинки (src/gm-panel/ImageProposals.vue) ----
    Плавающая НЕ блокирующая карточка поверх панелей ГМ, ниже модалок. */
 .proposals-card {
-  position: absolute; top: 52px; left: 50%; transform: translateX(-50%); z-index: 30; width: min(380px, 92vw);
+  position: absolute; top: 96px; left: 50%; transform: translateX(-50%); z-index: 30; width: min(380px, 92vw);
   display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
   background: rgba(18, 20, 26, 0.96); border: 1px solid #5a7bd8; border-radius: 10px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
@@ -512,13 +541,7 @@ input, select {
 .proposal-author { font-size: 13px; font-weight: 700; color: #e8ecf5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .proposal-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ---- Нижняя панель действий ---- */
-.action-rail {
-  position: absolute; bottom: 64px; left: 50%; transform: translateX(-50%);
-  display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: center;
-  background: rgba(18, 20, 26, 0.86); border: 1px solid #333a4a;
-  border-radius: 10px; padding: 8px 12px; max-width: 70vw; z-index: 6;
-}
+/* ---- Кнопки бросков атрибутов (внутри .action-bar, см. выше) ---- */
 .attr-buttons { display: flex; gap: 6px; flex-wrap: wrap; }
 .resolve-toggle { font-size: 12px; color: #cfd6e6; display: flex; align-items: center; gap: 4px; }
 
@@ -568,23 +591,13 @@ input, select {
 }
 .skill-toggle input { width: auto; margin-top: 2px; flex-shrink: 0; }
 
-/* ---- Общий чат ---- */
-.chat-panel {
-  position: absolute; left: 50%; transform: translateX(-50%); bottom: 120px;
-  width: min(480px, 90vw); display: flex; flex-direction: column; gap: 4px; z-index: 6;
-}
+/* ---- Общий чат (живёт во вкладке «Чат» журнала, см. .journal ниже) ---- */
 .chat-feed {
-  background: rgba(18, 20, 26, 0.86); border: 1px solid #333a4a; border-radius: 8px;
+  background: #12141a; border: 1px solid #333a4a; border-radius: 8px;
   padding: 6px 10px; pointer-events: auto;
-  max-height: 200px; overflow-y: auto;
+  flex: 1; min-height: 0; overflow-y: auto;
   display: flex; flex-direction: column; gap: 2px;
   font-size: 12px; color: #c8cfdd;
-  /* Сам фон/рамка панели тоже гаснут сверху вниз (там старые сообщения) —
-     чтобы жёсткая рамка не резала глаз на фоне карты, а плавно проступала
-     ближе к вводу. Маска — на весь блок (фон+рамка+контент), поэтому
-     JS-поопациональный fade строк (см. chat.js) идёт поверх и усиливает эффект. */
-  mask-image: linear-gradient(to bottom, transparent, black 70px);
-  -webkit-mask-image: linear-gradient(to bottom, transparent, black 70px);
 }
 .chat-line { word-break: break-word; }
 .chat-author { color: #9aa3b8; }
@@ -602,30 +615,69 @@ input, select {
 .chat-suggest-item strong { color: #fff; }
 .chat-suggest-item.active { background: #3a4a6b; }
 
-.bottom-bar {
-  position: absolute; bottom: 12px; left: 12px;
-  display: flex; gap: 8px; z-index: 7;
+/* ---- Журнал: чат + броски (public/js/journal.js) ----
+   Кнопка 💬 — правый нижний угол свободной области (левее колонки ГМ, если она
+   открыта: --side-w). Блок встаёт над кнопкой. Старые строки чата в журнале
+   читаются целиком — затухание из chat.js (inline opacity) гасим. */
+.journal-btn {
+  position: absolute; right: calc(8px + var(--side-w)); bottom: 8px; z-index: 7;
+  width: 44px; height: 44px; padding: 0; font-size: 20px; line-height: 1;
+  background: rgba(18, 20, 26, 0.92); border: 1px solid #333a4a; border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
-.drawer-btn {
-  border-radius: 8px; background: #232836; font-size: 13px;
-  border: 1px solid #333a4a; padding: 8px 14px;
+.journal-btn:hover { background: #232836; }
+.journal-btn.active { background: #3a4a6b; border-color: #5a7bd8; }
+.journal-badge {
+  position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 9px; background: #d86a5a; color: #fff; font-size: 11px; font-weight: 700;
+  line-height: 18px; text-align: center;
 }
-.drawer-btn:hover { background: #2c3346; }
-.drawer-btn.active { background: #3a4a6b; border-color: #5a7bd8; }
+.journal-badge[hidden] { display: none; }
+.journal {
+  /* bottom 76: над нижней панелью даже в две строки (на узком экране она переносится);
+     ширина сжимается так, чтобы журнал не заходил на левый блок (320 + зазоры). */
+  position: absolute; right: calc(8px + var(--side-w)); bottom: 76px; z-index: 7;
+  width: clamp(280px, calc(100% - var(--rail-w) - var(--side-w) - 344px), 380px);
+  height: min(460px, calc(100% - 92px));
+  display: none; flex-direction: column; overflow: hidden; font-size: 13px;
+  background: rgba(24, 27, 36, 0.97); border: 1px solid #333a4a; border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.journal.open { display: flex; animation: journalIn 0.14s ease; }
+@keyframes journalIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .journal.open { animation: none; } }
+.journal .dock-head { padding-bottom: 4px; }
+.journal .panel-tabs { padding-top: 2px; }
+.journal .chat-line { opacity: 1 !important; }
+.journal .chat-feed { margin: 0 8px; }
+.journal .chat-form { margin: 6px 8px 8px; }
+.journal .overlay-body.log { flex: 1; min-height: 0; max-height: none; }
+.journal-peek {
+  position: absolute; right: calc(8px + var(--side-w)); bottom: 60px; z-index: 7;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 4px; pointer-events: none;
+}
+.journal-peek-line {
+  pointer-events: auto; cursor: pointer; max-width: 340px; padding: 5px 10px;
+  border-radius: 8px; font-size: 12px; color: #d6dcea; word-break: break-word;
+  background: rgba(18, 20, 26, 0.94); border: 1px solid #333a4a;
+  animation: toastIn 0.2s ease; transition: opacity 0.3s ease;
+}
+.journal-peek-line strong { color: #fff; }
+.journal-peek-line.out { opacity: 0; }
 
-/* ---- Выдвижные ящики (компактные, привязаны к своей кнопке) ---- */
-.drawer {
-  position: absolute; left: 12px; bottom: 58px; width: 380px;
-  background: #1d212b; border: 1px solid #333a4a; border-radius: 10px;
-  padding: 14px 16px; max-height: 62vh; overflow-y: auto;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.55);
-  opacity: 0; visibility: hidden; transform: translateY(8px);
-  transition: opacity 0.18s ease, transform 0.18s ease;
-  z-index: 6;
+/* ---- Игрок: «Отряд» — компактная карточка справа сверху (PartyPanel.vue) ---- */
+.party-root { position: absolute; top: 8px; right: 8px; z-index: 5; }
+.party-card {
+  min-width: 190px; max-width: 260px; padding: 4px 10px 6px;
+  background: rgba(18, 20, 26, 0.9); border: 1px solid #333a4a; border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4); font-size: 12px;
 }
-.drawer.open { opacity: 1; visibility: visible; transform: translateY(0); }
-.drawer-head { display: flex; justify-content: space-between; align-items: center; }
-.drawer-close { background: transparent; padding: 4px 8px; font-size: 16px; color: #9aa3b8; }
+.party-card-head {
+  display: flex; justify-content: space-between; align-items: center; width: 100%;
+  padding: 2px 0; background: transparent; color: #9aa3b8; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.party-card-head:hover { background: transparent; color: #e0e4ee; }
 .stat-label { width: 70px; }
 
 .skills-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }

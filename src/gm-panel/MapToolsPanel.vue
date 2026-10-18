@@ -1,24 +1,34 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import Modal from './Modal.vue';
+import { useDock } from './useDock.js';
 
 const props = defineProps({
   store: { type: Object, required: true },
   bridge: { type: Object, required: true },
 });
 
-const activeTab = ref('tab-fog');
+// Вкладку и режим карты задаёт ОТКРЫТЫЙ пункт левой панели (public/js/dock.js):
+// туман / рисунок / картинки / локации — разные пункты одного блока. Открыт пункт —
+// инструмент включён, закрыт (повторный клик, ✕, Esc) или открыт другой — выключен.
+// Режимы взаимоисключающие, потому что пункт всегда один (раньше это решали
+// тумблеры «Рисовать/Редактировать» + приоритет проверок в map.js).
+const dock = useDock();
+const ITEM_TAB = { fog: 'tab-fog', images: 'tab-images', draw: 'tab-drawing', locations: 'tab-locations' };
+const ITEM_MODE = { fog: 'fog', images: 'image', draw: 'draw' };
+const activeTab = computed(() => ITEM_TAB[dock.current.value] || 'tab-fog');
+const activeEditMode = computed(() => ITEM_MODE[dock.current.value] || null); // null | 'fog' | 'image' | 'draw'
 
-// Взаимоисключение режимов редактирования (туман/картинки/рисование):
-// mapController в каждый момент включает только один режим (см. map.js —
-// проверка идёт в фиксированном порядке fogEdit > imageEdit > drawMode).
-const activeEditMode = ref(null); // null | 'fog' | 'image' | 'draw'
-function setEditMode(mode) {
-  activeEditMode.value = activeEditMode.value === mode ? null : mode;
-  props.bridge.mapController.setFogEditMode(activeEditMode.value === 'fog');
-  props.bridge.mapController.setImageEditMode(activeEditMode.value === 'image');
-  props.bridge.mapController.setDrawMode(activeEditMode.value === 'draw');
+// Дёргаем только те режимы mapController, что реально меняются: выключение режима
+// картинок сбрасывает выбранную картинку, лишний вызов был бы вредным.
+function applyEditMode(mode, prev) {
+  const mc = props.bridge.mapController;
+  if (prev === 'fog' || mode === 'fog') mc.setFogEditMode(mode === 'fog');
+  if (prev === 'image' || mode === 'image') mc.setImageEditMode(mode === 'image');
+  if (prev === 'draw' || mode === 'draw') mc.setDrawMode(mode === 'draw');
 }
+watch(activeEditMode, applyEditMode);
+applyEditMode(activeEditMode.value, null);
 
 // ---- Туман войны ----
 const fogTool = ref('brush');
@@ -71,7 +81,8 @@ function uploadMapImageFile(file, offsetIndex = 0) {
     window.imageTools.encodeFile(file).then(({ dataUrl, w, h }) => {
       // Размещаем картинку по центру текущего вьюпорта ГМ (а не по центру
       // всей карты — почти всегда вне поля зрения), и сразу выделяем её +
-      // включаем режим редактирования, чтобы можно было сходу расположить.
+      // открываем пункт «Картинки» (режим правки включится сам), чтобы можно
+      // было сходу расположить.
       const center = props.bridge.mapController.getCameraCenter();
       const shift = offsetIndex * 40;
       props.bridge.socket.emit(
@@ -80,11 +91,7 @@ function uploadMapImageFile(file, offsetIndex = 0) {
         (ack) => {
           if (ack && ack.ok && ack.entry) {
             selectImage(ack.entry.id);
-            // setEditMode — тоггл: если ГМ уже в режиме редактирования,
-            // повторный вызов его выключит, поэтому вызываем только когда
-            // режим ещё не включён.
-            if (activeEditMode.value !== 'image') setEditMode('image');
-            activeTab.value = 'tab-images';
+            window.Dock.open('images'); // не тоггл: если пункт уже открыт — ничего не делает
           } else {
             window.imageTools.notify('Не удалось загрузить картинку (слишком большая или неподдерживаемый формат)', 'error');
           }
@@ -145,8 +152,8 @@ onMounted(() => {
   props.bridge.mapController.setMapImageSelectHandler(() => {
     selectedMapImageId.value = props.bridge.mapController.getSelectedMapImageId();
   });
-  // Панель при сворачивании остаётся смонтированной (прячется CSS-ом), поэтому
-  // вставка работает и со свёрнутой панелью.
+  // Блок при закрытии остаётся смонтированным (прячется CSS-ом), поэтому вставка
+  // работает и при закрытом блоке — картинка ляжет и откроет пункт «Картинки».
   document.addEventListener('paste', onPaste);
 });
 onBeforeUnmount(() => {
@@ -263,18 +270,10 @@ function removeLocation(locationId) {
 </script>
 
 <template>
-  <div class="panel-tabs">
-    <button class="panel-tab" :class="{ active: activeTab === 'tab-fog' }" @click="activeTab = 'tab-fog'">🌫️ Туман</button>
-    <button class="panel-tab" :class="{ active: activeTab === 'tab-images' }" @click="activeTab = 'tab-images'">🖼️ Картинки</button>
-    <button class="panel-tab" :class="{ active: activeTab === 'tab-drawing' }" @click="activeTab = 'tab-drawing'">✏️ Рисование</button>
-    <button class="panel-tab" :class="{ active: activeTab === 'tab-locations' }" @click="activeTab = 'tab-locations'">🗺️ Локации</button>
-  </div>
+  <!-- Вкладок нет: пункт выбирается в левой панели (Dock), см. activeTab выше. -->
   <div class="overlay-body">
     <div class="tab-pane tab-pane-flex" :class="{ active: activeTab === 'tab-fog' }">
-      <div class="row" style="align-items:center; gap:4px;">
-        <button class="fog-btn fog-toggle" :class="{ active: activeEditMode === 'fog' }" @click="setEditMode('fog')">✏️ Рисовать</button>
-        <span class="hint-icon" title="Включите «Рисовать», затем закрашивайте карту. Игроки видят закрашенное чёрным.">❓</span>
-      </div>
+      <p class="muted small fog-hint">Закрашивайте карту — игроки видят закрашенное чёрным. Пока блок открыт, фишки не выбираются.</p>
       <div class="fog-group">
         <div class="row" style="gap:4px">
           <button class="fog-btn fog-tool" :class="{ active: fogTool === 'brush' }" title="Кисть" @click="setFogTool('brush')">🖌️</button>
@@ -298,10 +297,7 @@ function removeLocation(locationId) {
       </div>
     </div>
     <div class="tab-pane tab-pane-flex" :class="{ active: activeTab === 'tab-images' }">
-      <div class="row" style="align-items:center; gap:4px;">
-        <button class="fog-btn fog-toggle" :class="{ active: activeEditMode === 'image' }" @click="setEditMode('image')">✏️ Редактировать</button>
-        <span class="hint-icon" title="Включите «Редактировать», перетаскивайте картинку по карте, тяните за угловые точки для масштабирования, за верхнюю ручку — для поворота.">❓</span>
-      </div>
+      <p class="muted small fog-hint">Тяните картинку по карте, за угловые точки — размер, за верхнюю ручку — поворот. Пока блок открыт, фишки не выбираются.</p>
       <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" @change="onFileChange">
       <p class="muted small">Ctrl+V — вставить картинку из буфера (скриншот или «Копировать изображение»). Игроки тоже могут вставлять — вы увидите запрос на согласование.</p>
       <div class="map-images-list">
@@ -320,7 +316,7 @@ function removeLocation(locationId) {
       </div>
     </div>
     <div class="tab-pane tab-pane-flex" :class="{ active: activeTab === 'tab-drawing' }">
-      <button class="fog-btn fog-toggle" :class="{ active: activeEditMode === 'draw' }" @click="setEditMode('draw')">✏️ Рисовать</button>
+      <p class="muted small fog-hint">Рисуйте по карте — линии видят все. ПКМ — отменить последний штрих. Пока блок открыт, фишки не выбираются.</p>
       <div class="fog-group">
         <div class="row" style="gap:4px">
           <button class="fog-btn draw-tool" :class="{ active: drawTool === 'pen' }" title="Перо" aria-label="Перо" @click="setDrawTool('pen')">🖊️</button>

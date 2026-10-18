@@ -6,10 +6,12 @@ const props = defineProps({
   bridge: { type: Object, required: true },
 });
 
+// Правая половина нижней панели ГМ: DC проверки, бросок мастера, восстановление
+// отряда. Левая половина — бросок за выбранного (GmAttributesPanel.vue).
 const DC_PRESETS = [
-  { label: 'Лёгкий 10', value: 10 },
-  { label: 'Средний 14', value: 14 },
-  { label: 'Сложный 18', value: 18 },
+  { title: 'Лёгкий', value: 10 },
+  { title: 'Средний', value: 14 },
+  { title: 'Сложный', value: 18 },
 ];
 
 const customDc = ref('');
@@ -35,31 +37,22 @@ function freeRoll() {
 function restoreParty() {
   props.bridge.socket.emit('party:restore');
 }
-
-// Вернуть окна на места по умолчанию (если какое-то потерялось): позиции, размеры,
-// свёрнутость — без перезагрузки страницы (panelDrag.js, resetLayout).
-function resetWindows() {
-  window.PanelDrag.resetLayout('gmPanel', { resetOpen: true });
-  window.imageTools?.notify('Окна возвращены на места', 'ok');
-}
 </script>
 
 <template>
-  <div class="row" style="gap:6px; flex-wrap: nowrap;">
-    <strong>DC:</strong>
-    <div class="row" style="gap:4px">
-      <button
-        v-for="p in DC_PRESETS"
-        :key="p.value"
-        class="small"
-        :class="{ active: store.currentDc === p.value }"
-        @click="setDc(p.value)"
-      >{{ p.label }}</button>
-    </div>
-    <input type="number" placeholder="своё" style="width:64px" v-model="customDc" @change="onCustomChange">
-    <button class="small" @click="clearDc">сброс</button>
-    <button @click="freeRoll" title="Бросок мастера (d20)">🎲</button>
-    <button @click="restoreParty" title="Восстановить энергию и решимость всем">🔄</button>
-    <button @click="resetWindows" title="Сбросить расположение окон">↺</button>
+  <strong title="Сложность проверки (DC)">DC</strong>
+  <div class="row" style="gap:4px; flex-wrap: nowrap;">
+    <button
+      v-for="p in DC_PRESETS"
+      :key="p.value"
+      class="small"
+      :class="{ active: store.currentDc === p.value }"
+      :title="`${p.title} — DC ${p.value}`"
+      @click="setDc(p.value)"
+    >{{ p.value }}</button>
   </div>
+  <input type="number" placeholder="своё" title="Своё значение DC" style="width:60px" v-model="customDc" @change="onCustomChange">
+  <button class="small" title="Сбросить DC" @click="clearDc">✕</button>
+  <button @click="freeRoll" title="Бросок мастера (d20)">🎲</button>
+  <button @click="restoreParty" title="Восстановить энергию и решимость всем">🔄</button>
 </template>

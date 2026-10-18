@@ -1,10 +1,23 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
+import { useDock } from './useDock.js';
 
 // Роле-независимая панель — переиспользуется и в GM-панели, и в
 // player-panel (см. main.js обоих бандлов), как DiceLogPanel/ChatPanel.
 const props = defineProps({
   bridge: { type: Object, required: true },
+});
+
+// Эффекты — инструмент левой панели (пункт 'vfx'): «заряд» живёт, только пока блок
+// открыт. Закрыли блок или выбрали другой пункт — снимаем, иначе клик по карте
+// продолжал бы ставить эффект. Это же снимает прежний скрытый конфликт приоритета
+// «эффект / рисование / туман»: открыт всегда один пункт.
+const dock = useDock();
+watch(() => dock.current.value, (item) => {
+  if (item !== 'vfx' && armed.value) {
+    armed.value = null;
+    props.bridge.mapController?.setVfxPlaceMode(null);
+  }
 });
 
 const TYPES = [

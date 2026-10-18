@@ -5,12 +5,9 @@ const props = defineProps({
   store: { type: Object, required: true },
 });
 
-// Заголовок ящика (char-title) зависит от выбранного персонажа, поэтому
-// drawer-head тоже переехал сюда целиком (а не остался статичным, как у
-// skills-drawer — там в заголовке нет динамического текста). Кнопка закрытия
-// (.drawer-close) по-прежнему обрабатывается в player.js, но через делегирование
-// на document, а не querySelectorAll в момент загрузки — иначе слушатель не
-// повесился бы на кнопку, которую Vue рендерит позже, чем выполняется player.js.
+// Лист персонажа — верхняя часть блока «Персонаж» (ниже — навыки и инвентарь,
+// SkillsInventoryPanel). Шапку с заголовком блока и ✕ даёт Dock, здесь — только
+// имя/титул персонажа, поэтому он зависит от выбранного героя.
 const character = computed(() => props.store.characters.find((c) => c.id === props.store.myCharacterId));
 
 function pct(stat) {
@@ -21,10 +18,7 @@ function pct(stat) {
 </script>
 
 <template>
-  <div class="drawer-head">
-    <h2>{{ character ? `${character.name} — ${character.title}` : '—' }}</h2>
-    <button class="drawer-close" data-close="sheet-drawer">✕</button>
-  </div>
+  <h2>{{ character ? `${character.name} — ${character.title}` : '—' }}</h2>
   <template v-if="character">
     <p class="muted">{{ character.hook }}</p>
     <div class="row">

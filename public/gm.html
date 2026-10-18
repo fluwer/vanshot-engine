@@ -12,39 +12,33 @@
       <canvas id="map-canvas"></canvas>
     </div>
 
-    <div class="overlay gm-top-bar" id="topbar-vue-root"></div>
-
-    <div id="location-badge-vue-root"></div>
-
-    <!-- Плавающие окна: можно перетаскивать за заголовок в любое место над картой -->
-    <div class="overlay draggable-panel panel-characters" id="characters-panel">
-      <div class="overlay-head"><span>Участники</span><span class="chevron">▾</span></div>
-      <div id="characters-panel-vue-root"></div>
+    <!-- Сверху по центру: текущая локация и (только в бою) полоса «Раунд/Ход» -->
+    <div class="hud-top">
+      <div id="location-badge-vue-root"></div>
+      <div id="combat-strip-vue-root"></div>
     </div>
 
-    <div class="overlay draggable-panel panel-dicelog" id="dicelog-panel">
-      <div class="overlay-head"><span>Лог бросков</span><span class="chevron">▾</span></div>
-      <div id="dicelog-panel-vue-root"></div>
-    </div>
-
-    <div class="overlay draggable-panel panel-maptools" id="maptools-panel">
-      <div class="overlay-head"><span>Карта</span><span class="chevron">▾</span></div>
+    <!-- Блоки левой панели (public/js/dock.js): открыт максимум один, шапку добавляет Dock.
+         Vue-панели всегда смонтированы — скрывает их только CSS. -->
+    <div class="dock-block" id="maptools-panel">
       <div id="maptools-panel-vue-root"></div>
     </div>
 
-    <div class="overlay draggable-panel panel-sound" id="sound-panel">
-      <div class="overlay-head"><span>Звук</span><span class="chevron">▾</span></div>
-      <div id="sound-panel-vue-root"></div>
+    <div class="dock-block" id="effects-panel">
+      <div id="effects-panel-vue-root"></div>
     </div>
 
-    <div class="overlay draggable-panel panel-combat" id="combat-panel">
-      <div class="overlay-head"><span>Бой</span><span class="chevron">▾</span></div>
+    <div class="dock-block" id="combat-panel">
       <div id="combat-panel-vue-root"></div>
     </div>
 
-    <div class="overlay draggable-panel panel-effects" id="effects-panel">
-      <div class="overlay-head"><span>Эффекты</span><span class="chevron">▾</span></div>
-      <div id="effects-panel-vue-root"></div>
+    <div class="dock-block" id="sound-panel">
+      <div id="sound-panel-vue-root"></div>
+    </div>
+
+    <!-- Правая колонка «Участники»: открыта вместе с левым блоком, сворачивается в 👥 -->
+    <div class="dock-side" id="characters-panel">
+      <div id="characters-panel-vue-root"></div>
     </div>
 
     <!-- Кубики бросков: каждый бросок — свой d20, несколько одновременно (public/js/diceFx.js) -->
@@ -58,9 +52,33 @@
     <!-- Игроки предлагают картинки (Ctrl+V с согласованием ГМ) -->
     <div id="image-proposals-vue-root"></div>
 
-    <div class="chat-panel" id="chat-panel-vue-root"></div>
+    <!-- Журнал: чат + броски (public/js/journal.js) -->
+    <div class="journal-peek" id="journal-peek" aria-live="polite"></div>
+    <div class="journal" id="journal-panel">
+      <div class="dock-head">
+        <span class="dock-title">Журнал</span>
+        <button type="button" class="dock-close" title="Закрыть (Esc)" aria-label="Закрыть">✕</button>
+      </div>
+      <div class="panel-tabs dock-tabs">
+        <button type="button" class="panel-tab active" data-tab="chat">💬 Чат</button>
+        <button type="button" class="panel-tab" data-tab="dice">🎲 Броски</button>
+      </div>
+      <div class="dock-pane active" data-pane="chat">
+        <div id="chat-panel-vue-root"></div>
+      </div>
+      <div class="dock-pane" data-pane="dice">
+        <div id="dicelog-panel-vue-root"></div>
+      </div>
+    </div>
+    <button type="button" class="journal-btn" id="journal-btn" title="Журнал: чат и броски" aria-label="Журнал: чат и броски" aria-pressed="false">
+      <span>💬</span><span class="journal-badge" id="journal-badge" hidden></span>
+    </button>
 
-    <div class="action-rail" id="action-rail-vue-root"></div>
+    <!-- Нижняя панель: бросок за выбранного + DC и бросок мастера -->
+    <div class="action-bar" id="action-bar">
+      <div class="action-bar-group" id="action-rail-vue-root"></div>
+      <div class="action-bar-group" id="topbar-vue-root"></div>
+    </div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
@@ -73,7 +91,8 @@
   <script src="js/soundboard.js"></script>
   <script src="js/music.js"></script>
   <script src="js/chat.js"></script>
-  <script src="js/panelDrag.js"></script>
+  <script src="js/dock.js"></script>
+  <script src="js/journal.js"></script>
   <script src="js/gm.js"></script>
   <script src="dist/gm-panel.js"></script>
 </body>
