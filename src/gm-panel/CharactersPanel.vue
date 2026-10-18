@@ -100,6 +100,7 @@ function onAddNpc(data) {
         :npc="n"
         :selected="isSelected('npc', n.id)"
         :npc-color="bridge.npcColor"
+        :faction-style="bridge.npcFactionStyle"
         :expanded="expandedNpcId === n.id"
         :locations="store.locations"
         @toggle-expand="toggleExpandNpc(n.id)"

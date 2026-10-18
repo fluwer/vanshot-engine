@@ -2,6 +2,17 @@
 // герои» партии) — используем единый оттенок, совпадающий с .bar-fill.npc в CSS.
 const NPC_COLOR = '#c05656';
 
+// Фракция NPC (npc.faction — её ставит ГМ в карточке NPC; она уже уходит игрокам в
+// публичном state и видна в полосе боя): кольцо токена и значок у имени. Значки те
+// же 🔴🟢⚪, что в NPC_FACTIONS у CombatStrip/CombatPanel, — различие читается и без
+// опоры на цвет. «Нейтрал» — способ ГМ не раскрывать намерения NPC.
+const FACTION_STYLE = {
+  enemy: { color: '#d9534f', icon: '🔴' },
+  ally: { color: '#4caf6f', icon: '🟢' },
+  neutral: { color: '#aeb6c9', icon: '⚪' },
+};
+const factionStyleFor = (npc) => FACTION_STYLE[npc && npc.faction] || FACTION_STYLE.neutral;
+
 // Цвет рисования мастера — фиксированный, нейтральный (белый), чтобы визуально
 // отличаться от цветов персонажей (см. поле color в characters.json).
 const GM_DRAW_COLOR = '#ffffff';
@@ -239,6 +250,33 @@ function createMapController({ canvas, role, myCharacterId }) {
   let activeEffects = [];    // [{ type, x, y, startedAt, duration }] — только в памяти, не персистится
   let animRafId = null;      // единый rAF-цикл: спецэффекты + ходьба токенов + частицы ходьбы
   const VFX_DURATION = { smoke: 2200, fire: 1800, firework: 1200, explosion: 1100, lightning: 600, magic: 2000 };
+
+  // --- Линейка --------------------------------------------------------------
+  // Меряет расстояние между двумя клетками (жест: нажать — тянуть — отпустить), доступна
+  // обеим ролям. Чисто локальная: ничего не шлётся на сервер и другим участникам. Линия
+  // остаётся после отпускания — до следующего нажатия, выключения режима или смены
+  // локации. «Ход» — манхэттен (стоимость хода в бою, как считает сервер), «Прямая» —
+  // евклидово расстояние в клетках.
+  let rulerMode = false;
+  let ruler = null;              // { a: {x, y}, b: {x, y} } — клетки (целые)
+  let rulerDragging = false;
+  let rulerChangeHandler = null; // fn({ moves, straight } | null) — показания для RulerPanel.vue
+
+  function rulerReading() {
+    if (!ruler) return null;
+    const dx = Math.abs(ruler.a.x - ruler.b.x);
+    const dy = Math.abs(ruler.a.y - ruler.b.y);
+    return { moves: dx + dy, straight: Math.round(Math.hypot(dx, dy) * 10) / 10 };
+  }
+  function notifyRuler() {
+    if (rulerChangeHandler) rulerChangeHandler(rulerReading());
+  }
+  function clearRuler() {
+    ruler = null;
+    rulerDragging = false;
+    notifyRuler();
+    draw();
+  }
 
   // --- Ходьба токенов ------------------------------------------------------
   // Ключи с префиксом ('c:'+id / 'n:'+id): id персонажей и NPC в коде не
@@ -977,6 +1015,12 @@ function createMapController({ canvas, role, myCharacterId }) {
       if (me && me.color) drawColor = me.color;
     }
     if (locationChanged) cameraInitialized = false;
+    // Линия линейки привязана к клеткам прежней локации — на новой она бессмысленна.
+    if (locationChanged && ruler) {
+      ruler = null;
+      rulerDragging = false;
+      notifyRuler();
+    }
     // Выбранная картинка пропала (удалена) или сцена сменилась — снимаем выбор и жесты,
     // иначе рамка/ручки «висели» бы над несуществующей картинкой.
     if (selectedMapImageId
@@ -1125,6 +1169,8 @@ function createMapController({ canvas, role, myCharacterId }) {
 
     if (vfxPlaceMode) return 'crosshair';
 
+    if (rulerMode) return 'crosshair';
+
     if (drawMode) return drawTool === 'eraser' ? 'cell' : 'crosshair';
 
     if (!currentState) return 'grab';
@@ -1232,6 +1278,21 @@ function createMapController({ canvas, role, myCharacterId }) {
         suppressTap = true;
         return;
       }
+      // Линейка (ГМ и игрок): нажатие ставит начало, движение — конец, оба привязаны к
+      // клеткам. Жест целиком принадлежит линейке — тапом по клетке (ходом) он не станет.
+      if (rulerMode && (!isMouse || e.button === 0)) {
+        const pt = eventToCanvasPoint(e);
+        const cell = cellFromCanvasPoint(pt.x, pt.y);
+        suppressTap = true;
+        canvas.style.cursor = 'crosshair';
+        if (cell) {
+          ruler = { a: cell, b: { x: cell.x, y: cell.y } };
+          rulerDragging = true;
+          notifyRuler();
+          draw();
+        }
+        return;
+      }
       // Рисование доступно и ГМ, и игрокам (в отличие от тумана/картинок).
       if (drawMode && (!isMouse || e.button === 0)) {
         const pt = eventToCanvasPoint(e);
@@ -1272,6 +1333,17 @@ function createMapController({ canvas, role, myCharacterId }) {
   canvas.addEventListener('pointermove', (e) => {
     if (!activePointers.has(e.pointerId)) return;
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (rulerDragging) {
+      const pt = eventToCanvasPoint(e);
+      const cell = cellFromCanvasPoint(pt.x, pt.y);
+      if (cell && ruler && (cell.x !== ruler.b.x || cell.y !== ruler.b.y)) {
+        ruler.b = cell;
+        notifyRuler();
+        draw();
+      }
+      return;
+    }
 
     if (fogPainting) {
       const pt = eventToCanvasPoint(e);
@@ -1371,6 +1443,9 @@ function createMapController({ canvas, role, myCharacterId }) {
 
   function endPointer(e) {
     const pt = eventToCanvasPoint(e);
+    // Линейка: отпустили — линия остаётся; дальше обычный путь (suppressTap, поставленный
+    // в pointerdown, не даёт превратить жест в тап по клетке).
+    rulerDragging = false;
     if (imageDragging) {
       const m = currentState && currentState.mapImages && currentState.mapImages.find((mi) => mi.id === imageDragging.id);
       imageDragging = null;
@@ -1606,7 +1681,8 @@ function createMapController({ canvas, role, myCharacterId }) {
     // pose — отображаемая поза (getTokenPose): дробная позиция в клетках при
     // ходьбе и lift — подпрыгивание на шаге. Тело токена поднимается на lift,
     // подпись остаётся на высоте земли (не дрожит).
-    function drawToken(entity, pose, isSelected, fallbackColor, labelLines, isDead) {
+    // ringWidth — толщина кольца вокруг аватара (у NPC толще: цвет фракции должен читаться).
+    function drawToken(entity, pose, isSelected, fallbackColor, labelLines, isDead, ringWidth = 2) {
       const cx = (pose.x + 0.5) * cellSize;
       const groundY = (pose.y + 0.5) * cellSize + 20;
       const cy = groundY - pose.lift;
@@ -1622,7 +1698,7 @@ function createMapController({ canvas, role, myCharacterId }) {
         ctx.restore();
         ctx.beginPath();
         ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        ctx.lineWidth = (isSelected ? 3 : 2) / camera.zoom;
+        ctx.lineWidth = (isSelected ? Math.max(3, ringWidth) : ringWidth) / camera.zoom;
         ctx.strokeStyle = isSelected ? '#fff' : fallbackColor;
         ctx.stroke();
       } else {
@@ -1694,9 +1770,64 @@ function createMapController({ canvas, role, myCharacterId }) {
         const isSelected = selectedTarget?.type === 'npc' && selectedTarget.id === n.id;
         // Полупрозрачность у мастера — подсказка, что NPC ещё скрыт от игроков.
         if (role === 'gm' && !n.visible) ctx.globalAlpha = 0.45;
-        drawToken(n, pose, isSelected, NPC_COLOR, [n.name], n.dead);
+        // Цвет фракции — кольцом/заливкой, значок — рядом с именем (враг/союзник/нейтрал).
+        const faction = factionStyleFor(n);
+        drawToken(n, pose, isSelected, faction.color, [`${faction.icon} ${n.name}`], n.dead, 3.5);
         ctx.globalAlpha = 1;
       });
+    }
+
+    // Линейка — поверх токенов (линия читается над ними), но под рамкой картинки. Концы —
+    // центры клеток; подпись — плашка над концом B; размеры делим на zoom, чтобы линия и
+    // текст читались на любом масштабе.
+    if (ruler) {
+      const reading = rulerReading();
+      const z = camera.zoom;
+      const ax = (ruler.a.x + 0.5) * cellSize;
+      const ay = (ruler.a.y + 0.5) * cellSize + 20;
+      const bx = (ruler.b.x + 0.5) * cellSize;
+      const by = (ruler.b.y + 0.5) * cellSize + 20;
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = 'rgba(10, 11, 15, 0.8)'; // тёмная подложка — линия видна на любом фоне
+      ctx.lineWidth = 6 / z;
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
+      ctx.strokeStyle = '#ffd54a';
+      ctx.lineWidth = 3 / z;
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
+      [[ax, ay], [bx, by]].forEach(([px, py]) => {
+        ctx.beginPath();
+        ctx.arc(px, py, 5 / z, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffd54a';
+        ctx.fill();
+        ctx.lineWidth = 1.5 / z;
+        ctx.strokeStyle = 'rgba(10, 11, 15, 0.9)';
+        ctx.stroke();
+      });
+      const text = reading.moves === 0
+        ? '0'
+        : `Ход ${reading.moves} · Прямая ${String(reading.straight).replace('.', ',')}`;
+      ctx.font = `bold ${13 / z}px system-ui`;
+      const boxW = ctx.measureText(text).width + 16 / z;
+      const boxH = 22 / z;
+      const boxX = bx - boxW / 2;
+      const boxY = by - 16 / z - boxH;
+      ctx.fillStyle = 'rgba(18, 20, 26, 0.92)';
+      ctx.strokeStyle = '#ffd54a';
+      ctx.lineWidth = 1.5 / z;
+      ctx.fillRect(boxX, boxY, boxW, boxH);
+      ctx.strokeRect(boxX, boxY, boxW, boxH);
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, bx, boxY + boxH / 2);
+      ctx.restore();
     }
 
     // Рамка и ручки выбранной картинки — отдельным проходом ПОСЛЕ тумана и токенов: внутри
@@ -1812,6 +1943,15 @@ function createMapController({ canvas, role, myCharacterId }) {
     getMyDrawColor: () => drawColor,
     setVfxPlaceMode: (type) => { vfxPlaceMode = type || null; if (vfxPlaceMode && role === 'gm') clearSelection(); if (lastHoverPoint) canvas.style.cursor = cursorForHover(lastHoverPoint.x, lastHoverPoint.y); },
     setVfxPlaceHandler: (fn) => { vfxPlaceHandler = fn; },
+    // Линейка: режим ведёт блок «Линейка» левой панели (RulerPanel.vue); выключение режима убирает линию.
+    setRulerMode: (v) => {
+      rulerMode = !!v;
+      if (rulerMode && role === 'gm') clearSelection();
+      if (!rulerMode) clearRuler();
+      if (lastHoverPoint) canvas.style.cursor = cursorForHover(lastHoverPoint.x, lastHoverPoint.y);
+    },
+    clearRuler,
+    setRulerChangeHandler: (fn) => { rulerChangeHandler = fn; },
     playEffect,
   };
 }

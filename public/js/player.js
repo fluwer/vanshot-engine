@@ -281,6 +281,7 @@ Dock.init({
     { id: 'character', icon: '🧍', label: 'Персонаж', title: 'Персонаж, навыки и инвентарь', block: 'character-panel', group: 0 },
     { id: 'draw', icon: '✏️', label: 'Рисунок', title: 'Рисование', block: 'drawing-panel', group: 1 },
     { id: 'vfx', icon: '✨', label: 'Эффекты', title: 'Спецэффекты', block: 'effects-panel', group: 1 },
+    { id: 'ruler', icon: '📏', label: 'Линейка', title: 'Линейка', block: 'ruler-panel', group: 1 },
     { id: 'images', icon: '🖼️', label: 'Картинки', title: 'Мои картинки', block: 'images-panel', group: 1 },
     { id: 'sound', icon: '🔊', label: 'Звук', title: 'Звук', block: 'sound-panel', group: 2 },
     { id: 'leave', icon: '⎋', label: 'Выход', title: 'Забыть сессию на этом устройстве', action: leaveSession, bottom: true },

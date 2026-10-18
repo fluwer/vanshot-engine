@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import StatRow from './StatRow.vue';
 import InventoryEditor from './InventoryEditor.vue';
 
@@ -7,6 +7,9 @@ const props = defineProps({
   npc: { type: Object, required: true },
   selected: { type: Boolean, default: false },
   npcColor: { type: String, default: '#c05656' },
+  // { enemy|ally|neutral: { color, icon } } из public/js/map.js — запасной аватар красим цветом
+  // фракции, как кольцо токена на карте (иначе карточка и токен выглядели бы по-разному).
+  factionStyle: { type: Object, default: null },
   // См. CharacterCard.vue — состояние раскрытия живёт в родителе (аккордеон).
   expanded: { type: Boolean, default: false },
   // Полный список локаций — для селекта переноса NPC (см. TODO.md «Локации»).
@@ -23,6 +26,11 @@ const NPC_FACTIONS = [
   { id: 'ally', label: 'Союзник', icon: '🟢' },
   { id: 'neutral', label: 'Нейтрал', icon: '⚪' },
 ];
+
+const avatarColor = computed(() => {
+  const style = props.factionStyle && (props.factionStyle[props.npc.faction] || props.factionStyle.neutral);
+  return (style && style.color) || props.npcColor;
+});
 
 const damageAmount = ref('');
 
@@ -44,7 +52,7 @@ function handleCardClick(e) {
   <div class="card compact npc-mini" :class="{ selected }" @click="handleCardClick">
     <div class="row" style="gap:6px">
       <img v-if="npc.avatar" class="gm-avatar" :src="npc.avatar" alt="">
-      <span v-else class="gm-avatar gm-avatar-fallback" :style="{ background: npcColor }">{{ npc.name[0] }}</span>
+      <span v-else class="gm-avatar gm-avatar-fallback" :style="{ background: avatarColor }">{{ npc.name[0] }}</span>
       <h3 style="margin:0">{{ npc.name }} ({{ npc.role }})</h3>
       <button class="small npc-info-toggle" title="Инфо-карточка" @click="emit('info')">ℹ️</button>
       <button class="small" title="Свернуть/развернуть" @click="emit('toggle-expand')">{{ expanded ? '▾' : '▸' }}</button>

@@ -359,6 +359,14 @@ input, select {
 .fog-hint { margin: 0; line-height: 1.3; }
 .npc-faction-btn { flex: 0 0 auto; min-width: 34px; text-align: center; }
 
+/* ---- Линейка: показания (src/gm-panel/RulerPanel.vue) ---- */
+.ruler-reading {
+  display: flex; flex-direction: column; gap: 4px; padding: 8px 10px;
+  background: #12141a; border: 1px solid #333a4a; border-radius: 8px;
+}
+.ruler-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13px; }
+.ruler-row strong { color: #ffd54a; font-size: 15px; }
+
 /* ---- Панель спецэффектов: кнопки сеткой 2 в ряд (их шесть, «🎆 Фейерверк» в трёх колонках не влезает) ---- */
 .vfx-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
 

@@ -10,6 +10,7 @@ import SoundboardPanel from './SoundboardPanel.vue';
 import MusicPanel from './MusicPanel.vue';
 import DrawingPanel from './DrawingPanel.vue';
 import EffectsPanel from '../gm-panel/EffectsPanel.vue';
+import RulerPanel from '../gm-panel/RulerPanel.vue';
 import LocationBadge from '../gm-panel/LocationBadge.vue';
 import ActionRailPanel from './ActionRailPanel.vue';
 import MyImagesPanel from './MyImagesPanel.vue';
@@ -52,6 +53,7 @@ createApp(SoundboardPanel, { bridge }).mount('#soundboard-panel-vue-root');
 createApp(MusicPanel, { bridge }).mount('#music-panel-vue-root');
 createApp(DrawingPanel, { bridge }).mount('#drawing-panel-vue-root');
 createApp(EffectsPanel, { bridge }).mount('#effects-panel-vue-root');
+createApp(RulerPanel, { bridge }).mount('#ruler-panel-vue-root');
 
 // ---- Мои картинки: игрок правит СВОИ картинки на карте (после «Принять» ГМ) ----
 // Данные кормит player.js (state.mapImages, выбор картинки на канвасе). Блок по

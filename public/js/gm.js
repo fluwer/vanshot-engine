@@ -58,6 +58,7 @@ window.gmBridge = {
   getNpcAvatarPresetUrls: () => npcAvatarPresetUrls,
   resizeImage,
   npcColor: NPC_COLOR,
+  npcFactionStyle: FACTION_STYLE, // { enemy|ally|neutral: { color, icon } } — как на токенах (map.js)
   mapController,
 };
 
@@ -159,6 +160,7 @@ Dock.init({
     { id: 'draw', icon: '✏️', label: 'Рисунок', title: 'Рисование', block: 'maptools-panel', group: 0 },
     { id: 'images', icon: '🖼️', label: 'Картинки', title: 'Картинки на карте', block: 'maptools-panel', group: 0 },
     { id: 'vfx', icon: '✨', label: 'Эффекты', title: 'Спецэффекты', block: 'effects-panel', group: 0 },
+    { id: 'ruler', icon: '📏', label: 'Линейка', title: 'Линейка', block: 'ruler-panel', group: 0 },
     { id: 'locations', icon: '🗺️', label: 'Локации', title: 'Локации', block: 'maptools-panel', group: 1 },
     { id: 'combat', icon: '⚔️', label: 'Бой', title: 'Бой', block: 'combat-panel', group: 1 },
     { id: 'sound', icon: '🔊', label: 'Звук', title: 'Звук', block: 'sound-panel', group: 1 },

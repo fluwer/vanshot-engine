@@ -1387,12 +1387,24 @@ function endCombat() {
   return state.combat;
 }
 
+// Новый раунд: участники боя снова получают полный запас энергии (иначе сходивший
+// в 1-м раунде стоял бы во 2-м с нулём — раньше энергия сбрасывалась только при
+// завершении боя). Только энергия и только те, кто в порядке хода: остальные
+// персонажи и NPC вне боя не затрагиваются.
+function restoreCombatEnergy() {
+  state.combat.order.forEach((entry) => {
+    const entity = entry.type === 'npc' ? findNpc(entry.id) : findCharacter(entry.id);
+    if (entity && entity.energy) entity.energy.current = entity.energy.max;
+  });
+}
+
 function nextTurn() {
   if (!state.combat.active || !state.combat.order.length) return state.combat;
   state.combat.currentIndex += 1;
   if (state.combat.currentIndex >= state.combat.order.length) {
     state.combat.currentIndex = 0;
     state.combat.round += 1;
+    restoreCombatEnergy();
   }
   return state.combat;
 }

@@ -11,6 +11,7 @@ import EffectsPanel from './EffectsPanel.vue';
 import LocationBadge from './LocationBadge.vue';
 import ImageProposals from './ImageProposals.vue';
 import CombatStrip from './CombatStrip.vue';
+import RulerPanel from './RulerPanel.vue';
 
 // gm.js (обычный не-модульный скрипт) грузится раньше этого бандла и
 // успевает выставить window.gmSocket/window.gmBridge синхронно при загрузке
@@ -154,3 +155,6 @@ createApp(ChatPanel, { bridge, gmControls: true }).mount('#chat-panel-vue-root')
 
 // ---- Спецэффекты (дым/огонь/фейерверк) ----
 createApp(EffectsPanel, { bridge }).mount('#effects-panel-vue-root');
+
+// ---- Линейка (пункт левой панели; режим ведёт сама панель по dock:change) ----
+createApp(RulerPanel, { bridge }).mount('#ruler-panel-vue-root');
