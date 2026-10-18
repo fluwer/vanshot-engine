@@ -30,6 +30,28 @@ function broadcastState() {
   io.to('gm').emit('state', gameState.getGMState());
 }
 
+// Предложения картинок от игроков (Ctrl+V с согласованием ГМ, см. gameState.js).
+// Картинка в base64 — только в этих событиях, не в state (иначе раздула бы каждый broadcast).
+function proposalToWire(p) {
+  return { id: p.id, dataUrl: p.dataUrl, name: p.name, authorName: p.authorName, x: p.x, y: p.y };
+}
+
+// Событие всем сокетам игрока-автора (у него может быть открыто несколько вкладок).
+function emitToCharacter(characterId, event, payload) {
+  io.sockets.sockets.forEach((s) => {
+    if (s.data.role === 'player' && s.data.characterId === characterId) s.emit(event, payload);
+  });
+}
+
+// Предложение закрыто (принято / отклонено / отменено сменой сцены / просрочено):
+// ГМ убирает карточку, автору приходит итог.
+// extra — доп. поля для автора (при 'approved' это imageId принятой картинки: клиент
+// игрока по нему сразу открывает панель «Картинки» и выделяет её).
+function closeImageProposal(proposal, status, extra = {}) {
+  io.to('gm').emit('mapimage:proposal:closed', { id: proposal.id });
+  emitToCharacter(proposal.characterId, 'mapimage:proposal:result', { id: proposal.id, status, ...extra });
+}
+
 io.on('connection', (socket) => {
   socket.on('join', ({ role, name, characterId, code }, ack) => {
     // Код доступа защищает от входа под чужим персонажем — проверяем
@@ -52,6 +74,11 @@ io.on('connection', (socket) => {
 
     socket.emit('state', role === 'gm' ? gameState.getGMState() : gameState.getPublicState());
     socket.emit('fog:update', { blob: gameState.getFog() });
+    // ГМ мог перезагрузить страницу — возвращаем ему ожидающие предложения картинок.
+    if (role === 'gm') {
+      gameState.pruneImageProposals().forEach((p) => closeImageProposal(p, 'expired'));
+      socket.emit('mapimage:pending:sync', gameState.listImageProposals().map(proposalToWire));
+    }
     broadcastState();
     if (typeof ack === 'function') ack({ ok: true });
   });
@@ -142,16 +169,91 @@ io.on('connection', (socket) => {
     if (entry) broadcastState();
   });
 
-  socket.on('mapimage:update', ({ id, x, y, scale, rotation, locked }) => {
-    if (socket.data.role !== 'gm') return;
-    gameState.updateMapImage(id, { x, y, scale, rotation, locked });
-    broadcastState();
+  // Двигает/масштабирует/вращает картинку ГМ — любую; игрок — только СВОЮ (ownerId,
+  // после «Принять» ГМ), не заблокированную ГМ, на активной локации; locked игрок
+  // менять не может. Отказ игроку: ack { ok:false, reason } + свежий state (иначе
+  // клиент остался бы с оптимистично сдвинутой картинкой).
+  socket.on('mapimage:update', (payload, ack) => {
+    const reply = (res) => { if (typeof ack === 'function') ack(res); };
+    const { id, x, y, scale, rotation, locked } = payload || {};
+    if (socket.data.role === 'gm') {
+      gameState.updateMapImage(id, { x, y, scale, rotation, locked });
+      reply({ ok: true });
+      return broadcastState();
+    }
+    if (socket.data.role === 'player' && socket.data.characterId) {
+      const now = Date.now();
+      if (now - (socket.data.lastImageUpdateAt || 0) < config.IMAGE_UPDATE_MIN_INTERVAL_MS) {
+        socket.emit('state', gameState.getPublicState());
+        return reply({ ok: false, reason: 'rate-limit' });
+      }
+      socket.data.lastImageUpdateAt = now;
+      const result = gameState.updateOwnedMapImage(id, socket.data.characterId, { x, y, scale, rotation });
+      if (!result.ok) {
+        socket.emit('state', gameState.getPublicState());
+        return reply({ ok: false, reason: result.reason });
+      }
+      reply({ ok: true });
+      return broadcastState();
+    }
+    return reply({ ok: false, reason: 'forbidden' });
   });
 
-  socket.on('mapimage:remove', ({ id }) => {
+  socket.on('mapimage:remove', (payload, ack) => {
+    const reply = (res) => { if (typeof ack === 'function') ack(res); };
+    const { id } = payload || {};
+    if (socket.data.role === 'gm') {
+      gameState.removeMapImage(id);
+      reply({ ok: true });
+      return broadcastState();
+    }
+    if (socket.data.role === 'player' && socket.data.characterId) {
+      const result = gameState.removeOwnedMapImage(id, socket.data.characterId);
+      if (!result.ok) {
+        socket.emit('state', gameState.getPublicState());
+        return reply({ ok: false, reason: result.reason });
+      }
+      reply({ ok: true });
+      return broadcastState();
+    }
+    return reply({ ok: false, reason: 'forbidden' });
+  });
+
+  // Игрок вставил картинку (Ctrl+V) — она не попадает на карту, пока ГМ не
+  // примет. Только вошедший игрок с персонажем (наблюдатель предлагать не может).
+  // Если ГМ сейчас не подключён, предложение ждёт в очереди (до IMAGE_PROPOSAL_TTL_MS).
+  socket.on('mapimage:propose', (payload, ack) => {
+    const reply = (res) => { if (typeof ack === 'function') ack(res); };
+    if (socket.data.role !== 'player' || !socket.data.characterId) return reply({ ok: false, reason: 'forbidden' });
+    gameState.pruneImageProposals().forEach((p) => closeImageProposal(p, 'expired'));
+    const result = gameState.proposeMapImage(socket.data.characterId, socket.data.name, payload);
+    if (!result.ok) return reply({ ok: false, reason: result.reason });
+    io.to('gm').emit('mapimage:proposed', proposalToWire(result.proposal));
+    return reply({ ok: true, id: result.proposal.id });
+  });
+
+  // Vue-карточка ГМ запрашивает очередь при монтировании: события proposed/sync
+  // могли прийти раньше, чем загрузился бандл, а повторно сервер их не шлёт.
+  socket.on('mapimage:pending', (_payload, ack) => {
+    if (socket.data.role !== 'gm' || typeof ack !== 'function') return;
+    gameState.pruneImageProposals().forEach((p) => closeImageProposal(p, 'expired'));
+    ack(gameState.listImageProposals().map(proposalToWire));
+  });
+
+  socket.on('mapimage:approve', ({ id }, ack) => {
+    const reply = (res) => { if (typeof ack === 'function') ack(res); };
+    if (socket.data.role !== 'gm') return reply({ ok: false });
+    const result = gameState.approveImageProposal(id);
+    if (!result.ok) return reply({ ok: false, reason: result.reason });
+    closeImageProposal(result.proposal, 'approved', { imageId: result.entry.id });
+    reply({ ok: true, entry: result.entry });
+    return broadcastState();
+  });
+
+  socket.on('mapimage:reject', ({ id }) => {
     if (socket.data.role !== 'gm') return;
-    gameState.removeMapImage(id);
-    broadcastState();
+    const proposal = gameState.rejectImageProposal(id);
+    if (proposal) closeImageProposal(proposal, 'rejected');
   });
 
   // Рисование на карте — доступно и ГМ, и игрокам. Цвет определяется сервером
@@ -275,7 +377,12 @@ io.on('connection', (socket) => {
   // принцип, что при 'join').
   socket.on('location:switch', ({ locationId }) => {
     if (socket.data.role !== 'gm') return;
+    const previousLocationId = gameState.getActiveLocationId();
     if (gameState.setActiveLocation(locationId)) {
+      // Предложения картинок привязаны к прежней сцене — при реальной смене отменяем все.
+      if (gameState.getActiveLocationId() !== previousLocationId) {
+        gameState.clearImageProposals().forEach((p) => closeImageProposal(p, 'cancelled'));
+      }
       io.emit('fog:update', { blob: gameState.getFog() });
       broadcastState();
     }

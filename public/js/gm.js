@@ -12,11 +12,6 @@ fetch('/gameConfig.json')
     if (cfg.title) document.title = `${cfg.title} — Мастер`;
   });
 
-const diceStage = initDiceStage(document.getElementById('dice-stage'));
-const diceOverlay = document.getElementById('dice-overlay');
-let lastDiceId = null;
-let diceHideTimer = null;
-
 // ---- Аватары NPC (те же пресеты, что и у персонажей в player.js) — из
 // /avatars/presets/manifest.json, без хардкода списка ----
 let npcAvatarPresetUrls = [];
@@ -131,8 +126,16 @@ socket.on('vfx:play', ({ type, x, y }) => mapController.playEffect(type, x, y));
 
 socket.on('connect', () => {
   mapController.skipNextTokenAnimation(); // после реконнекта позиции — без проигрывания ходьбы
+  window.diceFx.skipNext(); // и старые броски из лога — без повторного проигрывания
   socket.emit('join', { role: 'gm', name: 'Мастер' });
 });
+
+// ---- Предложения картинок от игроков (Ctrl+V с согласованием ГМ) ----
+// Карточка с «Принять/Отклонить» — Vue-компонент ImageProposals.vue; сюда
+// приходят только события, раздаём их в window.imageProposalsApp.
+socket.on('mapimage:proposed', (p) => window.imageProposalsApp?.add(p));
+socket.on('mapimage:pending:sync', (list) => window.imageProposalsApp?.sync(list));
+socket.on('mapimage:proposal:closed', ({ id }) => window.imageProposalsApp?.remove(id));
 
 // Пока играет анимация «Начать бой», прячем обновление панели «Бой» —
 // иначе итоговый порядок хода виден раньше, чем долетели кубики. Гейтинг
@@ -158,15 +161,6 @@ function requestReachable() {
   socket.emit('reachable', { characterId: target.id }, (cells) => mapController.setReachable(cells));
 }
 
-
-function showDice(entry) {
-  if (diceHideTimer) clearTimeout(diceHideTimer);
-  diceOverlay.classList.add('show');
-  diceStage.show(entry, () => {
-    diceHideTimer = setTimeout(() => diceOverlay.classList.remove('show'), 1600);
-  });
-}
-
 socket.on('state', (state) => {
   window.dcControlsPanelApp?.updateState(state.currentDc);
   window.locationBadgeApp?.updateState(state.activeLocationName);
@@ -178,9 +172,6 @@ socket.on('state', (state) => {
   applyMusicState(state.music);
   mapController.updateState(state);
   requestReachable();
-
-  if (state.diceLog.length && state.diceLog[0].id !== lastDiceId) {
-    lastDiceId = state.diceLog[0].id;
-    showDice(state.diceLog[0]);
-  }
+  window.diceFx.onState(state);   // кубики: все новые броски, параллельно (public/js/diceFx.js)
+  window.sceneFx.onState(state);  // приветствие сцены: при загрузке и при смене локации (public/js/scenefx.js)
 });

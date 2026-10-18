@@ -213,6 +213,7 @@ input, select {
 .music-panel      { top: 340px; right: 276px; width: 260px; }
 .drawing-panel    { top: 500px; right: 8px;   width: 260px; height: 220px; }
 .effects-panel    { top: 500px; right: 276px; width: 220px; }
+.images-panel     { top: 500px; right: 504px; width: 260px; height: 260px; }
 
 .panel-closed { display: none !important; }
 .overlay-head-controls { display: flex; align-items: center; gap: 6px; }
@@ -231,6 +232,7 @@ input, select {
   border: 1px solid #333a4a; padding: 8px 14px; text-align: left; cursor: pointer;
 }
 .tools-toggle-btn:hover { background: #2c3346; }
+.tools-reset-btn { margin-top: 8px; width: 100%; font-size: 12px; color: #aeb6c9; }
 .tools-toggle-btn.active { background: #3a4a6b; border-color: #5a7bd8; }
 
 /* ---- Мастер: нижняя панель-подвал (DC, бросок мастера, восстановление) ---- */
@@ -241,7 +243,9 @@ input, select {
 /* ---- Мастер: плавающие окна (можно перетащить за заголовок) ---- */
 .draggable-panel {
   display: flex; flex-direction: column; min-height: 0;
-  max-height: 90vh; width: 320px;
+  /* Не больше сцены (.map-stage): широкое/высокое окно сжимается под экран, а не
+     уходит за край (clamp позиции — panelDrag.js, clampPanelIntoViewport). */
+  max-height: calc(100% - 16px); max-width: calc(100% - 16px); width: 320px;
   resize: both;
   min-width: 240px; min-height: 120px;
 }
@@ -391,17 +395,35 @@ input, select {
 }
 .party-row .stat-icon { display: inline-flex; align-items: center; gap: 2px; color: #cfd6e6; flex-shrink: 0; white-space: nowrap; }
 
-/* ---- Кубик поверх карты ---- */
-.dice-overlay {
+/* ---- Кубики бросков поверх карты (public/js/diceFx.js) ----
+   Слой на весь экран, клики проходят насквозь; каждый бросок — свой .dfx-item
+   (d20 + чип с итогом), несколько штук одновременно. Координаты и анимации
+   задаёт diceFx.js, здесь — только внешний вид. */
+.dfx-layer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 8; }
+.dfx-item { position: absolute; width: var(--dfx-size, 72px); height: var(--dfx-size, 72px); will-change: transform; }
+.dfx-die { position: relative; width: 100%; height: 100%; will-change: transform; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.55)); }
+.dfx-die-svg { width: 100%; height: 100%; display: block; }
+.dfx-die-num {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-  pointer-events: none; opacity: 0; visibility: hidden;
-  transition: opacity 0.25s ease; z-index: 8;
+  font-weight: 800; font-size: calc(var(--dfx-size, 72px) * 0.34); color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75), 0 0 8px rgba(0, 0, 0, 0.5); user-select: none;
 }
-.dice-overlay.show { opacity: 1; visibility: visible; }
-.dice-overlay .dice-stage {
-  background: rgba(18, 20, 26, 0.94); min-width: 200px; margin: 0;
-  box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+.dfx-landed .dfx-die-num { text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85), 0 0 10px var(--dfx-color); }
+.dfx-crit-success .dfx-die { filter: drop-shadow(0 0 12px #7be07e) drop-shadow(0 6px 10px rgba(0, 0, 0, 0.55)); }
+.dfx-crit-fail .dfx-die { filter: drop-shadow(0 0 12px #e07b7b) drop-shadow(0 6px 10px rgba(0, 0, 0, 0.55)); }
+.dfx-chip {
+  position: absolute; top: 100%; left: 50%; margin-top: 4px; min-width: 96px; max-width: 220px;
+  transform: translateX(calc(-50% + var(--dfx-chip-shift, 0px)));
+  padding: 4px 10px; border-radius: 8px; text-align: center; white-space: nowrap;
+  background: rgba(18, 20, 26, 0.92); border: 1px solid var(--dfx-color, #888);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); opacity: 0; transition: opacity 0.25s ease;
 }
+.dfx-landed .dfx-chip { opacity: 1; }
+.dfx-chip-name { font-size: 11px; font-weight: 700; color: var(--dfx-color, #ccc); overflow: hidden; text-overflow: ellipsis; }
+.dfx-chip-total { font-size: 22px; font-weight: 800; line-height: 1.1; color: #fff; }
+.dfx-crit-success .dfx-chip-total { color: #7be07e; }
+.dfx-crit-fail .dfx-chip-total { color: #e07b7b; }
+.dfx-chip-detail { font-size: 11px; color: #aeb6c9; }
 
 /* ---- Эффект «Начать бой»: россыпь кубиков инициативы поверх карты ---- */
 .combat-start-overlay {
@@ -417,6 +439,78 @@ input, select {
   background: rgba(18, 20, 26, 0.94); min-width: 130px; margin: 0;
   box-shadow: 0 8px 30px rgba(0,0,0,0.5);
 }
+
+/* ---- Приветствие сцены (public/js/scenefx.js) ----
+   Выше боя (12), ниже модалок (50). Фон почти непрозрачный, чтобы новая карта
+   под ним не мелькала; кнопка «Продолжить» нажимается только после .ready. */
+.scene-intro-overlay {
+  position: absolute; inset: 0; z-index: 14; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(14, 16, 22, 0.97) 0%, rgba(4, 5, 8, 0.995) 75%);
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity 0.6s ease, visibility 0s linear 0.6s;
+}
+.scene-intro-overlay.show { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity 0.9s ease; }
+.scene-intro-inner { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; padding: 0 24px; }
+.scene-intro-kicker { font-size: 12px; letter-spacing: 0.5em; text-transform: uppercase; color: #8b95ad; opacity: 0; }
+.scene-intro-title {
+  max-width: 90vw; overflow-wrap: anywhere; opacity: 0;
+  font-size: clamp(30px, 6vw, 68px); font-weight: 700; color: #eef1f8;
+  text-shadow: 0 0 24px rgba(120, 150, 255, 0.35);
+}
+.scene-intro-line { width: 0; height: 1px; background: linear-gradient(90deg, transparent, #7a88b0, transparent); }
+.scene-intro-continue {
+  margin-top: 18px; padding: 10px 30px; font-size: 15px; letter-spacing: 0.12em;
+  background: transparent; border: 1px solid #5a6a94; color: #dfe5f5; border-radius: 6px;
+  opacity: 0; pointer-events: none;
+}
+.scene-intro-continue:hover { background: rgba(90, 123, 216, 0.18); border-color: #8fa4e8; }
+.scene-intro-overlay.ready .scene-intro-continue { pointer-events: auto; }
+.scene-intro-overlay.show .scene-intro-kicker { animation: sceneFadeUp 1s ease 0.3s forwards; }
+.scene-intro-overlay.show .scene-intro-title { animation: sceneTitleIn 1.4s cubic-bezier(0.2, 0.7, 0.2, 1) 0.5s forwards; }
+.scene-intro-overlay.show .scene-intro-line { animation: sceneLineIn 1.2s ease 1.1s forwards; }
+.scene-intro-overlay.show .scene-intro-continue { animation: sceneFadeUp 0.8s ease 1.5s forwards; }
+@keyframes sceneFadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes sceneTitleIn {
+  from { opacity: 0; letter-spacing: 0.35em; filter: blur(8px); }
+  to { opacity: 1; letter-spacing: 0.06em; filter: blur(0); }
+}
+@keyframes sceneLineIn { from { width: 0; } to { width: min(420px, 60vw); } }
+@media (prefers-reduced-motion: reduce) {
+  .scene-intro-overlay.show .scene-intro-kicker,
+  .scene-intro-overlay.show .scene-intro-title,
+  .scene-intro-overlay.show .scene-intro-continue { animation: none; opacity: 1; transform: none; letter-spacing: 0.06em; }
+  .scene-intro-overlay.show .scene-intro-line { animation: none; width: min(420px, 60vw); }
+}
+
+/* ---- Тосты (public/js/imagetools.js, notify) ---- */
+.toast-host {
+  position: fixed; top: 56px; left: 50%; transform: translateX(-50%); z-index: 60;
+  display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none;
+}
+.toast {
+  max-width: min(480px, 90vw); padding: 8px 14px; border-radius: 8px; font-size: 13px; color: #e8ecf5;
+  background: rgba(18, 20, 26, 0.95); border: 1px solid #333a4a; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  animation: toastIn 0.25s ease; transition: opacity 0.3s ease;
+}
+.toast-ok { border-color: #4c8f6f; }
+.toast-error { border-color: #b85a5a; }
+.toast-out { opacity: 0; }
+@keyframes toastIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
+/* ---- Игроки предлагают картинки (src/gm-panel/ImageProposals.vue) ----
+   Плавающая НЕ блокирующая карточка поверх панелей ГМ, ниже модалок. */
+.proposals-card {
+  position: absolute; top: 52px; left: 50%; transform: translateX(-50%); z-index: 30; width: min(380px, 92vw);
+  display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
+  background: rgba(18, 20, 26, 0.96); border: 1px solid #5a7bd8; border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+}
+.proposals-title { font-size: 12px; font-weight: 700; color: #cfd8f0; letter-spacing: 0.02em; }
+.proposal-row { display: flex; gap: 10px; align-items: flex-start; }
+.proposal-thumb { width: 120px; height: 90px; object-fit: contain; border-radius: 6px; background: #0e1016; border: 1px solid #333a4a; flex-shrink: 0; }
+.proposal-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.proposal-author { font-size: 13px; font-weight: 700; color: #e8ecf5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proposal-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---- Нижняя панель действий ---- */
 .action-rail {

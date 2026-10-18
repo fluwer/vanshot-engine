@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import Modal from './Modal.vue';
 
 const props = defineProps({
@@ -50,7 +50,9 @@ function imageLabel(m) {
   // name — исходное имя файла (см. onFileChange); у картинок, загруженных
   // до появления этого поля, его нет — оставляем старый фолбэк по времени.
   const label = m.name || `Картинка ${new Date(Number(m.id.split('-')[0])).toLocaleTimeString()}`;
-  return `${m.locked ? '🔒 ' : ''}${label}`;
+  // Картинки, принятые от игроков, — с именем владельца (👤): он правит их сам, пока не 🔒.
+  const owner = m.ownerName ? `👤 ${m.ownerName}: ` : '';
+  return `${m.locked ? '🔒 ' : ''}${owner}${label}`;
 }
 
 function selectImage(id) {
@@ -60,30 +62,21 @@ function selectImage(id) {
   if (img) props.bridge.mapController.centerCameraOn(img.x, img.y);
 }
 
-function onFileChange(e) {
-  const file = e.target.files && e.target.files[0];
-  if (!file) return;
-  e.target.value = '';
-  const reader = new FileReader();
-  reader.onload = () => {
-    const img = new Image();
-    img.onload = () => {
-      const maxSize = 1600;
-      const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
-      const w = Math.round(img.width * scale);
-      const h = Math.round(img.height * scale);
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+// Загрузка одного файла-картинки на карту — общий путь для <input type=file> и
+// вставки из буфера (Ctrl+V). Кодирование (сжатие, сохранение прозрачности) —
+// в public/js/imagetools.js. offsetIndex сдвигает позицию, когда вставлено
+// сразу несколько файлов, иначе они легли бы друг на друга в одной точке.
+function uploadMapImageFile(file, offsetIndex = 0) {
+  return new Promise((resolve) => {
+    window.imageTools.encodeFile(file).then(({ dataUrl, w, h }) => {
       // Размещаем картинку по центру текущего вьюпорта ГМ (а не по центру
       // всей карты — почти всегда вне поля зрения), и сразу выделяем её +
       // включаем режим редактирования, чтобы можно было сходу расположить.
       const center = props.bridge.mapController.getCameraCenter();
+      const shift = offsetIndex * 40;
       props.bridge.socket.emit(
         'mapimage:upload',
-        { dataUrl, naturalWidth: w, naturalHeight: h, name: file.name, x: center.x, y: center.y },
+        { dataUrl, naturalWidth: w, naturalHeight: h, name: window.imageTools.imageName(file), x: center.x + shift, y: center.y + shift },
         (ack) => {
           if (ack && ack.ok && ack.entry) {
             selectImage(ack.entry.id);
@@ -91,13 +84,48 @@ function onFileChange(e) {
             // повторный вызов его выключит, поэтому вызываем только когда
             // режим ещё не включён.
             if (activeEditMode.value !== 'image') setEditMode('image');
+            activeTab.value = 'tab-images';
+          } else {
+            window.imageTools.notify('Не удалось загрузить картинку (слишком большая или неподдерживаемый формат)', 'error');
           }
+          resolve();
         },
       );
-    };
-    img.src = reader.result;
-  };
-  reader.readAsDataURL(file);
+    }).catch((err) => {
+      window.imageTools.notify((err && err.message) || 'Не удалось прочитать картинку', 'error');
+      resolve();
+    });
+  });
+}
+
+// Пока идёт загрузка, повторный Ctrl+V игнорируется (иначе двойное нажатие
+// клало бы дубликаты, а лимита на число картинок на сервере нет).
+let uploading = false;
+async function uploadFiles(files) {
+  if (uploading) return;
+  uploading = true;
+  try {
+    for (let i = 0; i < files.length; i += 1) await uploadMapImageFile(files[i], i);
+  } finally {
+    uploading = false;
+  }
+}
+
+function onFileChange(e) {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (file) uploadFiles([file]);
+}
+
+// Ctrl+V с картинкой в буфере (скриншот, «Копировать изображение» в браузере)
+// кладёт её на карту. Текстовую вставку (чат, поля) не трогаем — см.
+// imageTools.shouldIgnorePaste.
+function onPaste(e) {
+  if (window.imageTools.shouldIgnorePaste(e)) return;
+  const files = window.imageTools.clipboardImageFiles(e);
+  if (!files.length) return;
+  e.preventDefault();
+  uploadFiles(files);
 }
 
 function onLockChange(e) {
@@ -117,6 +145,12 @@ onMounted(() => {
   props.bridge.mapController.setMapImageSelectHandler(() => {
     selectedMapImageId.value = props.bridge.mapController.getSelectedMapImageId();
   });
+  // Панель при сворачивании остаётся смонтированной (прячется CSS-ом), поэтому
+  // вставка работает и со свёрнутой панелью.
+  document.addEventListener('paste', onPaste);
+});
+onBeforeUnmount(() => {
+  document.removeEventListener('paste', onPaste);
 });
 
 // ---- Рисование на карте ----
@@ -269,6 +303,7 @@ function removeLocation(locationId) {
         <span class="hint-icon" title="Включите «Редактировать», перетаскивайте картинку по карте, тяните за угловые точки для масштабирования, за верхнюю ручку — для поворота.">❓</span>
       </div>
       <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" @change="onFileChange">
+      <p class="muted small">Ctrl+V — вставить картинку из буфера (скриншот или «Копировать изображение»). Игроки тоже могут вставлять — вы увидите запрос на согласование.</p>
       <div class="map-images-list">
         <div
           v-for="m in store.mapImages"
@@ -280,7 +315,7 @@ function removeLocation(locationId) {
         <p v-if="!store.mapImages.length" class="muted small">Пока нет картинок</p>
       </div>
       <div class="map-image-controls" v-show="selectedMapImage">
-        <label class="npc-flag-toggle"><input type="checkbox" :checked="selectedMapImage?.locked" @change="onLockChange"> <span title="Заблокировать позицию (запретить перемещение)">🔒</span></label>
+        <label class="npc-flag-toggle"><input type="checkbox" :checked="selectedMapImage?.locked" @change="onLockChange"> <span title="Заблокировать позицию (запретить перемещение). У картинки игрока блокировка запрещает правку и удаление и владельцу.">🔒</span></label>
         <button class="small danger wide" @click="removeImage">Удалить картинку</button>
       </div>
     </div>

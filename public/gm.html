@@ -47,11 +47,16 @@
       <div id="effects-panel-vue-root"></div>
     </div>
 
-    <div class="dice-overlay" id="dice-overlay">
-      <div class="card dice-stage" id="dice-stage"></div>
-    </div>
+    <!-- Кубики бросков: каждый бросок — свой d20, несколько одновременно (public/js/diceFx.js) -->
+    <div class="dfx-layer" id="dice-layer"></div>
 
     <div class="combat-start-overlay" id="combat-start-overlay"></div>
+
+    <!-- Приветствие сцены (public/js/scenefx.js) -->
+    <div class="scene-intro-overlay" id="scene-intro-overlay" role="dialog" aria-modal="true"></div>
+
+    <!-- Игроки предлагают картинки (Ctrl+V с согласованием ГМ) -->
+    <div id="image-proposals-vue-root"></div>
 
     <div class="chat-panel" id="chat-panel-vue-root"></div>
 
@@ -62,6 +67,9 @@
   <script src="js/map.js"></script>
   <script src="js/dice.js"></script>
   <script src="js/combatfx.js"></script>
+  <script src="js/imagetools.js"></script>
+  <script src="js/diceFx.js"></script>
+  <script src="js/scenefx.js"></script>
   <script src="js/soundboard.js"></script>
   <script src="js/music.js"></script>
   <script src="js/chat.js"></script>

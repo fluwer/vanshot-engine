@@ -119,6 +119,16 @@ function createMapController({ canvas, role, myCharacterId }) {
   let imageRotating = null;            // { id, rotation0, startAngle } — rotation0/startAngle в радианах
   const IMAGE_HANDLE_RADIUS = 9;       // в экранных px — переводим в мировые через camera.zoom
   const ROTATE_HANDLE_DIST = 26;       // в экранных px — расстояние от верхней грани до ручки поворота
+  const TOUCH_HANDLE_FACTOR = 2.2;     // у пальца ручки целиться труднее — зона попадания больше, чем у мыши
+  let lastPointerType = 'mouse';       // тип последнего указателя (для зоны попадания по ручкам)
+
+  // Править картинку может ГМ — любую; игрок — только свою (m.ownerId — characterId
+  // автора, его проставляет сервер при «Принять» ГМ). Блокировку 🔒 (m.locked) учитывают
+  // искатели ручек ниже, а сервер проверяет и владение, и блокировку сам.
+  const canEditImage = (m) => !!m && (role === 'gm' || (!!myCharacterId && m.ownerId === myCharacterId));
+  // Режим правки картинок активен: у ГМ — всегда при imageEdit, у игрока — только после входа.
+  const imageEditActive = () => imageEdit && (role === 'gm' || !!myCharacterId);
+  const handleHitRadius = () => (IMAGE_HANDLE_RADIUS * (lastPointerType === 'mouse' ? 1 : TOUCH_HANDLE_FACTOR)) / camera.zoom;
 
   // Топовая (последняя в массиве) картинка под мировой точкой, или null.
   // Точка переводится в локальные (неповёрнутые) координаты картинки поворотом
@@ -128,6 +138,9 @@ function createMapController({ canvas, role, myCharacterId }) {
     const list = currentState.mapImages;
     for (let i = list.length - 1; i >= 0; i--) {
       const m = list[i];
+      // Игрок «видит сквозь» чужие и ГМ-картинки: выбрать можно только свою,
+      // иначе ГМ-фон под ней перехватывал бы клик.
+      if (!canEditImage(m)) continue;
       const w = m.naturalWidth * m.scale;
       const h = m.naturalHeight * m.scale;
       const angle = m.rotation || 0;
@@ -176,9 +189,9 @@ function createMapController({ canvas, role, myCharacterId }) {
   function findRotateHandleAt(wx, wy) {
     if (!currentState || !currentState.mapImages || !selectedMapImageId) return null;
     const m = currentState.mapImages.find((mi) => mi.id === selectedMapImageId);
-    if (!m || m.locked) return null;
+    if (!m || m.locked || !canEditImage(m)) return null;
     const p = rotateHandlePosition(m);
-    const radius = IMAGE_HANDLE_RADIUS / camera.zoom;
+    const radius = handleHitRadius();
     return Math.hypot(wx - p.x, wy - p.y) <= radius ? m : null;
   }
 
@@ -187,9 +200,9 @@ function createMapController({ canvas, role, myCharacterId }) {
   function findMapImageHandleAt(wx, wy) {
     if (!currentState || !currentState.mapImages || !selectedMapImageId) return null;
     const m = currentState.mapImages.find((mi) => mi.id === selectedMapImageId);
-    if (!m || m.locked) return null;
+    if (!m || m.locked || !canEditImage(m)) return null;
     const corners = mapImageCorners(m);
-    const radius = IMAGE_HANDLE_RADIUS / camera.zoom;
+    const radius = handleHitRadius();
     for (let i = 0; i < corners.length; i++) {
       if (Math.hypot(wx - corners[i].x, wy - corners[i].y) <= radius) {
         return { m, cornerIndex: i, corners };
@@ -964,6 +977,16 @@ function createMapController({ canvas, role, myCharacterId }) {
       if (me && me.color) drawColor = me.color;
     }
     if (locationChanged) cameraInitialized = false;
+    // Выбранная картинка пропала (удалена) или сцена сменилась — снимаем выбор и жесты,
+    // иначе рамка/ручки «висели» бы над несуществующей картинкой.
+    if (selectedMapImageId
+        && (locationChanged || !(state.mapImages || []).some((m) => m.id === selectedMapImageId))) {
+      selectedMapImageId = null;
+      imageDragging = null;
+      imageResizing = null;
+      imageRotating = null;
+      if (mapImageSelectHandler) mapImageSelectHandler(null);
+    }
     // Выбор ГМ не должен «висеть»: при смене локации и когда выбранного
     // персонажа/NPC уже удалили — иначе следующий тап шлёт ход несуществующему.
     if (role === 'gm' && selectedTarget) {
@@ -1088,7 +1111,7 @@ function createMapController({ canvas, role, myCharacterId }) {
 
     if (role === 'gm' && fogEdit) return 'crosshair';
 
-    if (role === 'gm' && imageEdit) {
+    if (imageEditActive()) {
       if (findRotateHandleAt(world.x, world.y)) return 'crosshair'; // приближение, нет родного "rotate"
       const handleHit = findMapImageHandleAt(world.x, world.y);
       if (handleHit) {
@@ -1134,6 +1157,7 @@ function createMapController({ canvas, role, myCharacterId }) {
   canvas.addEventListener('pointerdown', (e) => {
     canvas.setPointerCapture(e.pointerId);
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    lastPointerType = e.pointerType || 'mouse'; // от него зависит зона попадания по ручкам картинки
     if (activePointers.size === 1) {
       const isMouse = e.pointerType === 'mouse';
       // ГМ рисует туман: тач/перо или ЛКМ перехватывают жест под кисть/зону.
@@ -1149,9 +1173,14 @@ function createMapController({ canvas, role, myCharacterId }) {
         }
         return;
       }
-      // ГМ в режиме редактирования картинок: сначала проверяем угловую ручку
-      // выбранной картинки (масштабирование), иначе — захват/выбор картинки под точкой.
-      if (role === 'gm' && imageEdit && (!isMouse || e.button === 0)) {
+      // Режим редактирования картинок (ГМ — любые, игрок — только свои): сначала
+      // проверяем ручки выбранной картинки (поворот/масштаб), иначе — захват/выбор
+      // картинки под точкой.
+      if (imageEditActive() && (!isMouse || e.button === 0)) {
+        // Жест целиком принадлежит режиму картинок: если он ничего не захватил (клик мимо,
+        // чужая/заблокированная картинка), endPointer не должен превратить его в тап по
+        // клетке — иначе у игрока (его токен всегда выбран) клик по пустому месту двигал бы токен.
+        suppressTap = true;
         const pt = eventToCanvasPoint(e);
         const world = screenToWorld(pt.x, pt.y);
         const rotateHit = findRotateHandleAt(world.x, world.y);
@@ -1185,7 +1214,7 @@ function createMapController({ canvas, role, myCharacterId }) {
         }
         const hit = findMapImageAt(world.x, world.y);
         selectedMapImageId = hit ? hit.id : null;
-        if (hit && !hit.locked) {
+        if (hit && !hit.locked && canEditImage(hit)) {
           imageDragging = { id: hit.id, offsetX: world.x - hit.x, offsetY: world.y - hit.y };
           canvas.style.cursor = 'grabbing';
         }
@@ -1473,42 +1502,7 @@ function createMapController({ canvas, role, myCharacterId }) {
         ctx.translate(m.x, m.y);
         ctx.rotate(angle);
         ctx.drawImage(img, -w / 2, -h / 2, w, h);
-        if (role === 'gm' && imageEdit && selectedMapImageId === m.id) {
-          ctx.strokeStyle = m.locked ? '#d86a5a' : '#5a7bd8';
-          ctx.lineWidth = 2 / camera.zoom;
-          ctx.setLineDash([6 / camera.zoom, 4 / camera.zoom]);
-          ctx.strokeRect(-w / 2, -h / 2, w, h);
-        }
         ctx.restore();
-        if (role === 'gm' && imageEdit && selectedMapImageId === m.id && !m.locked) {
-          const handleSize = (IMAGE_HANDLE_RADIUS * 2) / camera.zoom;
-          ctx.save();
-          ctx.fillStyle = '#5a7bd8';
-          ctx.strokeStyle = '#fff';
-          ctx.lineWidth = 1.5 / camera.zoom;
-          mapImageCorners(m).forEach((c) => {
-            ctx.fillRect(c.x - handleSize / 2, c.y - handleSize / 2, handleSize, handleSize);
-            ctx.strokeRect(c.x - handleSize / 2, c.y - handleSize / 2, handleSize, handleSize);
-          });
-          ctx.restore();
-          // Ручка поворота — кружок над верхней гранью, соединённый линией с картинкой.
-          const topCenter = { x: m.x + Math.sin(angle) * (h / 2), y: m.y - Math.cos(angle) * (h / 2) };
-          const rp = rotateHandlePosition(m);
-          ctx.save();
-          ctx.strokeStyle = '#5a7bd8';
-          ctx.lineWidth = 1.5 / camera.zoom;
-          ctx.beginPath();
-          ctx.moveTo(topCenter.x, topCenter.y);
-          ctx.lineTo(rp.x, rp.y);
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.arc(rp.x, rp.y, IMAGE_HANDLE_RADIUS / camera.zoom, 0, Math.PI * 2);
-          ctx.fillStyle = '#5a7bd8';
-          ctx.fill();
-          ctx.strokeStyle = '#fff';
-          ctx.stroke();
-          ctx.restore();
-        }
       });
     }
 
@@ -1705,6 +1699,56 @@ function createMapController({ canvas, role, myCharacterId }) {
       });
     }
 
+    // Рамка и ручки выбранной картинки — отдельным проходом ПОСЛЕ тумана и токенов: внутри
+    // цикла по картинкам их перекрывали сетка и туман (у игрока он непрозрачный), и
+    // править картинку было бы не видно. У игрока — только для его собственных.
+    if (imageEditActive() && selectedMapImageId && currentState.mapImages) {
+      const m = currentState.mapImages.find((mi) => mi.id === selectedMapImageId);
+      if (m && canEditImage(m)) {
+        const w = m.naturalWidth * m.scale;
+        const h = m.naturalHeight * m.scale;
+        const angle = m.rotation || 0;
+        ctx.save();
+        ctx.translate(m.x, m.y);
+        ctx.rotate(angle);
+        ctx.strokeStyle = m.locked ? '#d86a5a' : '#5a7bd8';
+        ctx.lineWidth = 2 / camera.zoom;
+        ctx.setLineDash([6 / camera.zoom, 4 / camera.zoom]);
+        ctx.strokeRect(-w / 2, -h / 2, w, h);
+        ctx.restore();
+        if (!m.locked) {
+          const visualRadius = IMAGE_HANDLE_RADIUS * (lastPointerType === 'mouse' ? 1 : 1.5);
+          const handleSize = (visualRadius * 2) / camera.zoom;
+          ctx.save();
+          ctx.fillStyle = '#5a7bd8';
+          ctx.strokeStyle = '#fff';
+          ctx.lineWidth = 1.5 / camera.zoom;
+          mapImageCorners(m).forEach((c) => {
+            ctx.fillRect(c.x - handleSize / 2, c.y - handleSize / 2, handleSize, handleSize);
+            ctx.strokeRect(c.x - handleSize / 2, c.y - handleSize / 2, handleSize, handleSize);
+          });
+          ctx.restore();
+          // Ручка поворота — кружок над верхней гранью, соединённый линией с картинкой.
+          const topCenter = { x: m.x + Math.sin(angle) * (h / 2), y: m.y - Math.cos(angle) * (h / 2) };
+          const rp = rotateHandlePosition(m);
+          ctx.save();
+          ctx.strokeStyle = '#5a7bd8';
+          ctx.lineWidth = 1.5 / camera.zoom;
+          ctx.beginPath();
+          ctx.moveTo(topCenter.x, topCenter.y);
+          ctx.lineTo(rp.x, rp.y);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(rp.x, rp.y, visualRadius / camera.zoom, 0, Math.PI * 2);
+          ctx.fillStyle = '#5a7bd8';
+          ctx.fill();
+          ctx.strokeStyle = '#fff';
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+    }
+
     // Маркиза выделения зоны тумана (пунктир) — только пока ГМ тянет прямоугольник.
     if (fogSelection) {
       const x = Math.min(fogSelection.x0, fogSelection.x1);
@@ -1750,7 +1794,11 @@ function createMapController({ canvas, role, myCharacterId }) {
     // отрисованного прямоугольника, см. блок currentState.mapImages.forEach
     // в draw()). Зум не меняем — только сдвигаем камеру.
     centerCameraOn: (x, y) => { camera.x = x; camera.y = y; clampCamera(); draw(); saveCameraDebounced(); },
-    setImageEditMode: (v) => { imageEdit = !!v; if (imageEdit && role === 'gm') clearSelection(); if (!imageEdit) { imageDragging = null; selectedMapImageId = null; if (mapImageSelectHandler) mapImageSelectHandler(null); } draw(); if (lastHoverPoint) canvas.style.cursor = cursorForHover(lastHoverPoint.x, lastHoverPoint.y); },
+    // У игрока выбор токена (selectedTarget — его персонаж) НЕ сбрасываем: без него тап-ход
+    // не работает; режим правки у игрока касается только его собственных картинок.
+    setImageEditMode: (v) => { imageEdit = !!v; if (imageEdit && role === 'gm') clearSelection(); if (!imageEdit) { imageDragging = null; imageResizing = null; imageRotating = null; selectedMapImageId = null; if (mapImageSelectHandler) mapImageSelectHandler(null); } draw(); if (lastHoverPoint) canvas.style.cursor = cursorForHover(lastHoverPoint.x, lastHoverPoint.y); },
+    // Видимый размер мира в мировых px — для подбора начального масштаба вставляемой картинки.
+    getViewSize: () => ({ w: canvas.width / camera.zoom, h: canvas.height / camera.zoom }),
     setMapImageSelectHandler: (fn) => { mapImageSelectHandler = fn; },
     setMapImageUpdateHandler: (fn) => { mapImageUpdateHandler = fn; },
     selectMapImage: (id) => { selectedMapImageId = id; draw(); },

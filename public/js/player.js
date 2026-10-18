@@ -26,8 +26,6 @@ initCombatStartFx(socket, {
 
 const joinForm = document.getElementById('join-form');
 const app = document.getElementById('app');
-const diceStage = initDiceStage(document.getElementById('dice-stage'));
-const diceOverlay = document.getElementById('dice-overlay');
 
 let myCharacterId = null;
 let mapController = null;
@@ -43,8 +41,6 @@ let lastFogBlob = null;
 // незаметно, но при авто-рджойне после перезагрузки страницы может не
 // происходить вовсе — экран карты остаётся чёрным.
 let lastState = null;
-let lastDiceId = null;
-let diceHideTimer = null;
 
 // Масштабирует картинку в offscreen-canvas до maxSize по большей стороне
 // и отдаёт JPEG data URL — переиспользуется JoinForm.vue через bridge.
@@ -101,6 +97,7 @@ function clearSession() {
 // её и уходим в обычный 'observer' с формой входа.
 socket.on('connect', () => {
   if (mapController) mapController.skipNextTokenAnimation(); // после реконнекта позиции — без проигрывания ходьбы
+  window.diceFx.skipNext(); // и старые броски из лога — без повторного проигрывания
   const saved = loadSession();
   if (!saved) {
     socket.emit('join', { role: 'observer' });
@@ -131,6 +128,9 @@ function onJoined({ characterId, name }) {
 
   joinForm.classList.add('hidden');
   app.classList.remove('hidden');
+  // Окна измерить можно только теперь (до входа #app скрыт, размеры нулевые): вернуть в
+  // экран те, чьи сохранённые/дефолтные позиции его не вмещают.
+  window.PanelDrag.clampAll();
 
   mapController = createMapController({
     canvas: document.getElementById('map-canvas'),
@@ -149,9 +149,99 @@ function onJoined({ characterId, name }) {
   mapController.setDrawEraseHandler((id) => socket.emit('drawing:erase', { id }));
   mapController.setDrawUndoHandler(() => socket.emit('drawing:undo')); // ПКМ в режиме рисования
   mapController.setVfxPlaceHandler((type, x, y) => socket.emit('vfx:trigger', { type, x, y }));
+  // Правка СВОИХ картинок (после «Принять» ГМ): один апдейт на жест, по отпусканию.
+  // Сервер проверяет владение и блокировку; при отказе пришлёт свежий state, и
+  // картинка вернётся на место, а мы скажем почему.
+  mapController.setMapImageUpdateHandler((patch) => {
+    socket.emit('mapimage:update', patch, (res) => {
+      if (res && !res.ok && res.reason !== 'rate-limit') {
+        window.imageTools.notify(IMAGE_EDIT_REASONS[res.reason] || 'Не удалось изменить картинку', 'error');
+      }
+    });
+  });
+  mapController.setMapImageSelectHandler((id) => window.imagesPanelApp?.setSelected(id));
+  window.imagesPanelApp?.setMyCharacterId(myCharacterId);
   window.playerBridge.mapController = mapController;
   requestReachable();
+  // Первый снимок пришёл до join (см. lastState выше) — кубики: помечаем
+  // историю бросков виденной, без проигрывания; сцена: приветствие при входе и
+  // после перезагрузки страницы (повторный onJoined при реконнекте с той же
+  // локацией ничего не покажет — sceneFx помнит последнюю).
+  if (lastState) {
+    window.diceFx.onState(lastState);
+    window.sceneFx.onState(lastState);
+  }
 }
+
+// --- Вставка картинки (Ctrl+V) -------------------------------------------
+// Игрок не кладёт картинку на карту сам, а ПРЕДЛАГАЕТ её ГМ: она появится
+// только после «Принять» (server/gameState.proposeMapImage). Слушатель один на
+// страницу; до входа (mapController нет) вставка игнорируется.
+const IMAGE_EDIT_REASONS = {
+  locked: 'ГМ заблокировал эту картинку',
+  forbidden: 'Эту картинку вам менять нельзя',
+  'wrong-location': 'Эта картинка относится к другой локации',
+};
+const PROPOSAL_REASONS = {
+  'limit-reached': 'Достигнут лимит ваших картинок на карте — удалите лишнюю в панели «Картинки»',
+  'pending-exists': 'Дождитесь решения ГМ по предыдущей картинке',
+  cooldown: 'Подождите пару секунд перед следующей картинкой',
+  'too-many': 'У ГМ слишком много картинок на согласовании — попробуйте позже',
+  'too-large': 'Картинка слишком тяжёлая',
+  invalid: 'Не удалось отправить: неподдерживаемый формат картинки',
+  forbidden: 'Войдите в игру персонажем, чтобы предлагать картинки',
+};
+let proposingImage = false;
+
+document.addEventListener('paste', async (e) => {
+  if (!mapController || !myCharacterId) return;
+  if (window.imageTools.shouldIgnorePaste(e)) return;
+  const files = window.imageTools.clipboardImageFiles(e);
+  if (!files.length) return;
+  e.preventDefault();
+  if (proposingImage) return;
+  proposingImage = true;
+  const unlock = setTimeout(() => { proposingImage = false; }, 10000); // страховка, если ack не придёт
+  const file = files[0]; // одно предложение за раз
+  try {
+    const { dataUrl, w, h } = await window.imageTools.encodeFile(file);
+    const center = mapController.getCameraCenter(); // куда игрок смотрел в момент вставки
+    // Начальный масштаб: картинка влезает примерно в 40% видимой области, а не
+    // ложится в натуральную величину (до 1600 мировых px — это 100 клеток шириной).
+    const view = mapController.getViewSize();
+    const scale = Math.min(1, (0.4 * view.w) / w, (0.4 * view.h) / h);
+    socket.emit(
+      'mapimage:propose',
+      { dataUrl, naturalWidth: w, naturalHeight: h, name: window.imageTools.imageName(file), x: center.x, y: center.y, scale },
+      (res) => {
+        clearTimeout(unlock);
+        proposingImage = false;
+        if (res && res.ok) window.imageTools.notify('Картинка отправлена ГМ на согласование', 'ok');
+        else window.imageTools.notify(PROPOSAL_REASONS[res && res.reason] || 'Не удалось отправить картинку', 'error');
+      },
+    );
+  } catch (err) {
+    clearTimeout(unlock);
+    proposingImage = false;
+    window.imageTools.notify((err && err.message) || 'Не удалось прочитать картинку', 'error');
+  }
+});
+
+// Итог решения ГМ по предложенной картинке.
+// Принятая картинка: запоминаем её id — как только она появится в state.mapImages
+// (событие приходит раньше state), открываем панель «Картинки» и включаем правку.
+let pendingFocusImageId = null;
+socket.on('mapimage:proposal:result', ({ status, imageId }) => {
+  if (status === 'approved' && imageId) pendingFocusImageId = imageId;
+  const texts = {
+    approved: ['ГМ принял вашу картинку — её можно двигать и менять размер', 'ok'],
+    rejected: ['ГМ отклонил вашу картинку', 'error'],
+    cancelled: ['Предложение отменено: ГМ сменил сцену', 'error'],
+    expired: ['Предложение устарело: ГМ не ответил', 'error'],
+  };
+  const t = texts[status];
+  if (t) window.imageTools.notify(t[0], t[1]);
+});
 
 window.playerBridge = {
   socket,
@@ -254,14 +344,14 @@ document.querySelectorAll('#app .draggable-panel').forEach((panel) => {
 document.querySelector('.drawer-btn[data-drawer="tools-drawer"]')?.addEventListener('click', () => {
   toolsSyncFns.forEach((fn) => fn());
 });
-
-function showDice(entry) {
-  if (diceHideTimer) clearTimeout(diceHideTimer);
-  diceOverlay.classList.add('show');
-  diceStage.show(entry, () => {
-    diceHideTimer = setTimeout(() => diceOverlay.classList.remove('show'), 1600);
-  });
-}
+// «Сбросить расположение окон»: позиции, размеры, свёрнутость и набор открытых
+// окон по умолчанию — без перезагрузки страницы (перезагрузка заново показала бы
+// приветствие сцены и перезапустила музыку).
+document.getElementById('tools-reset-layout')?.addEventListener('click', () => {
+  PanelDrag.resetLayout('playerPanel', { resetOpen: true });
+  toolsSyncFns.forEach((fn) => fn());
+  window.imageTools.notify('Окна возвращены на места', 'ok');
+});
 
 function requestReachable() {
   if (!myCharacterId || !mapController) return;
@@ -280,17 +370,22 @@ socket.on('state', (state) => {
   window.charactersStoreApp?.updateState(state.characters, state.skillsCatalog);
   window.diceLogPanelApp?.updateState(state.diceLog);
   window.locationBadgeApp?.updateState(state.activeLocationName);
+  window.imagesPanelApp?.updateState(state.mapImages);
   renderChat(state.chat);
   window.combatPanelApp?.updateState(state.combat, state.npcs || []);
   applyMusicState(state.music);
 
+  // Кубики и приветствие сцены — только после входа: до join форма входа, и
+  // звук/анимации «в пустоту» не нужны (первый снимок обработает onJoined).
   if (mapController) {
     mapController.updateState(state);
+    window.diceFx.onState(state);
+    window.sceneFx.onState(state);
     requestReachable();
-  }
-
-  if (state.diceLog.length && state.diceLog[0].id !== lastDiceId) {
-    lastDiceId = state.diceLog[0].id;
-    showDice(state.diceLog[0]);
+    if (pendingFocusImageId && (state.mapImages || []).some((m) => m.id === pendingFocusImageId)) {
+      const id = pendingFocusImageId;
+      pendingFocusImageId = null;
+      window.imagesPanelApp?.focus(id);
+    }
   }
 });

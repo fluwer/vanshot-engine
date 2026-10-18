@@ -801,6 +801,35 @@ function getReachableCells(characterId) {
   });
 }
 
+// Место падения кубика на экране (доли 0..1) и параметры траектории. Из
+// нескольких случайных точек берём самую удалённую от кубиков, которые ещё
+// лежат на экране (младше DICE_THROW_RECENT_MS), — чтобы кубики параллельных
+// бросков не налезали друг на друга. Выбирает сервер, поэтому у ГМ и всех
+// игроков кубик лежит в одном и том же месте.
+function pickDiceThrow() {
+  const now = Date.now();
+  const recent = state.diceLog
+    .filter((e) => e.throw && now - new Date(e.time).getTime() < config.DICE_THROW_RECENT_MS)
+    .map((e) => e.throw);
+  const rnd = (min, max) => min + Math.random() * (max - min);
+  let best = null;
+  let bestDist = -1;
+  for (let i = 0; i < config.DICE_THROW_CANDIDATES; i++) {
+    const p = {
+      x: rnd(config.DICE_THROW_X_MIN, config.DICE_THROW_X_MAX),
+      y: rnd(config.DICE_THROW_Y_MIN, config.DICE_THROW_Y_MAX),
+    };
+    const dist = recent.length ? Math.min(...recent.map((r) => Math.hypot(r.x - p.x, r.y - p.y))) : Infinity;
+    if (dist > bestDist) { best = p; bestDist = dist; }
+  }
+  return {
+    x: Math.round(best.x * 1000) / 1000,
+    y: Math.round(best.y * 1000) / 1000,
+    from: Math.floor(Math.random() * 4), // с какого края экрана влетает: 0 слева, 1 справа, 2 сверху, 3 снизу
+    seed: Math.floor(Math.random() * 1e9), // от него клиент считает отскоки/вращение — одинаково у всех
+  };
+}
+
 // DC берётся из текущего значения, заданного мастером (не с клиента).
 // spendResolve: если true и есть Решимость — списать 1 и добавить +2 к сумме.
 // label: имя для лога, когда бросок не привязан к персонажу (свободный бросок мастера).
@@ -826,6 +855,11 @@ function rollDice(characterId, attribute, spendResolve, label) {
     characterId,
     characterName: entity ? entity.name : (label || 'Мастер'),
     dead: !!(entity && entity.dead), // бросает убитый — клиент помечает имя ☠
+    // Кто бросает и каким цветом рисовать его кубик (у скрытого NPC нет записи
+    // в публичном state — клиенту проще получить цвет прямо из записи лога).
+    kind: c ? 'character' : n ? 'npc' : 'gm',
+    color: c ? (c.color || '#888888') : n ? config.DICE_COLOR_NPC : config.DICE_COLOR_GM,
+    throw: pickDiceThrow(),
     attribute,
     die,
     attrValue,
@@ -1022,6 +1056,18 @@ function findMapImage(id) {
   return state.mapImages.find((m) => m.id === id);
 }
 
+// Разбор data URL картинки: { ok: true, ext, buffer } или { ok: false, reason }.
+// reason: 'invalid' (не картинка/битый формат) | 'too-large' (> MAP_IMAGE_UPLOAD_MAX_SIZE).
+// Общий для загрузки ГМ (addMapImage) и предложений игроков (proposeMapImage).
+function parseImageDataUrl(dataUrl) {
+  if (typeof dataUrl !== 'string') return { ok: false, reason: 'invalid' };
+  const match = /^data:image\/(png|jpeg|jpg|webp|gif);base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+  if (!match) return { ok: false, reason: 'invalid' };
+  const buffer = Buffer.from(match[2], 'base64');
+  if (buffer.length > config.MAP_IMAGE_UPLOAD_MAX_SIZE) return { ok: false, reason: 'too-large' }; // защита от гигантских картинок
+  return { ok: true, ext: match[1] === 'jpeg' ? 'jpg' : match[1], buffer };
+}
+
 // naturalWidth/naturalHeight — реальный размер файла (клиент вычисляет
 // перед отправкой); позиция по умолчанию — центр карты. name — исходное
 // имя загруженного файла (для отображения в списке картинок на панели ГМ).
@@ -1030,15 +1076,15 @@ function findMapImage(id) {
 // MapToolsPanel.vue); при отсутствии/невалидности — фолбэк на центр карты,
 // как раньше.
 function addMapImage(dataUrl, naturalWidth, naturalHeight, name, x, y) {
-  if (typeof dataUrl !== 'string') return null;
-  const match = /^data:image\/(png|jpeg|jpg|webp|gif);base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
-  if (!match) return null;
+  const parsed = parseImageDataUrl(dataUrl);
+  if (!parsed.ok) return null;
   const w = Number(naturalWidth);
   const h = Number(naturalHeight);
   if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return null;
-  const ext = match[1] === 'jpeg' ? 'jpg' : match[1];
-  const buffer = Buffer.from(match[2], 'base64');
-  if (buffer.length > config.MAP_IMAGE_UPLOAD_MAX_SIZE) return null; // защита от гигантских картинок
+  // Размер приходит от клиента (он сжимает до 1600) — не доверяем: огромные
+  // значения растянули бы рамку/границы камеры у всех.
+  if (w > config.MAP_IMAGE_MAX_NATURAL_SIDE || h > config.MAP_IMAGE_MAX_NATURAL_SIDE) return null;
+  const { ext, buffer } = parsed;
   if (!fs.existsSync(MAP_IMAGES_DIR)) fs.mkdirSync(MAP_IMAGES_DIR, { recursive: true });
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const fileName = `${id}.${ext}`;
@@ -1067,12 +1113,63 @@ function addMapImage(dataUrl, naturalWidth, naturalHeight, name, x, y) {
 function updateMapImage(id, patch) {
   const m = findMapImage(id);
   if (!m) return null;
-  if (typeof patch.x === 'number') m.x = patch.x;
-  if (typeof patch.y === 'number') m.y = patch.y;
-  if (typeof patch.scale === 'number' && patch.scale > 0) m.scale = clamp(patch.scale, 0.05, 10);
-  if (typeof patch.rotation === 'number' && Number.isFinite(patch.rotation)) m.rotation = patch.rotation;
+  if (Number.isFinite(patch.x)) m.x = patch.x;
+  if (Number.isFinite(patch.y)) m.y = patch.y;
+  if (Number.isFinite(patch.scale) && patch.scale > 0) m.scale = clamp(patch.scale, 0.05, 10);
+  if (Number.isFinite(patch.rotation)) m.rotation = patch.rotation;
   if (typeof patch.locked === 'boolean') m.locked = patch.locked;
   return m;
+}
+
+// Окрестность «домашней области» локации (gridWidth×gridHeight клеток + запас):
+// владелец-игрок не уносит картинку дальше — иначе камера у всех растянулась бы, а
+// «Скрыть всё» у ГМ перебирало бы клетки тумана по огромной площади.
+function clampImagePosition(location, x, y) {
+  const margin = config.PLAYER_IMAGE_MARGIN_PX;
+  const maxX = location.gridWidth * config.CELL_SIZE + margin;
+  const maxY = location.gridHeight * config.CELL_SIZE + 20 + margin;
+  return { x: clamp(x, -margin, maxX), y: clamp(y, 20 - margin, maxY) };
+}
+
+// Проверка владения для правки/удаления картинки игроком: своя (ownerId), не
+// заблокирована ГМ (locked) и лежит на активной локации. { ok, entry } | { ok: false, reason }.
+function checkOwnedMapImage(id, characterId) {
+  const m = findMapImage(id);
+  if (!m || !characterId || m.ownerId !== characterId) return { ok: false, reason: 'forbidden' };
+  if (m.locked) return { ok: false, reason: 'locked' };
+  if (m.locationId !== state.activeLocationId) return { ok: false, reason: 'wrong-location' };
+  return { ok: true, entry: m };
+}
+
+// Игрок правит СВОЮ картинку. В patch берём только x/y/scale/rotation — locked
+// игрок менять не может; масштаб и позиция ограничены (см. config.PLAYER_IMAGE_*).
+function updateOwnedMapImage(id, characterId, patch) {
+  const check = checkOwnedMapImage(id, characterId);
+  if (!check.ok) return check;
+  const m = check.entry;
+  const p = patch || {};
+  if (Number.isFinite(p.scale) && p.scale > 0) {
+    const maxScale = config.PLAYER_IMAGE_MAX_SIDE_PX / Math.max(m.naturalWidth, m.naturalHeight);
+    m.scale = clamp(p.scale, 0.05, Math.min(10, maxScale));
+  }
+  if (Number.isFinite(p.x) || Number.isFinite(p.y)) {
+    const pos = clampImagePosition(
+      findLocation(m.locationId) || getActiveLocation(),
+      Number.isFinite(p.x) ? p.x : m.x,
+      Number.isFinite(p.y) ? p.y : m.y,
+    );
+    m.x = pos.x;
+    m.y = pos.y;
+  }
+  if (Number.isFinite(p.rotation)) m.rotation = p.rotation;
+  return { ok: true, entry: m };
+}
+
+function removeOwnedMapImage(id, characterId) {
+  const check = checkOwnedMapImage(id, characterId);
+  if (!check.ok) return check;
+  removeMapImage(id);
+  return { ok: true };
 }
 
 function removeMapImage(id) {
@@ -1086,6 +1183,111 @@ function removeMapImage(id) {
     });
   }
   return true;
+}
+
+// ---- Предложения картинок от игроков ------------------------------------
+// Игрок вставляет картинку (Ctrl+V) — она не попадает на карту, пока ГМ не
+// нажмёт «Принять». Предложения хранятся ТОЛЬКО в памяти (не в state и не в
+// runtime.json): base64-картинка до 5 МБ раздула бы каждый broadcast, а на
+// диск файл пишется лишь при принятии (addMapImage). Рестарт сервера очищает
+// очередь — это допустимо, игрок может вставить заново.
+const pendingImageProposals = new Map(); // id -> предложение
+const lastProposalAt = new Map();        // characterId -> время последнего предложения (кулдаун)
+
+// Убирает просроченные предложения и возвращает их (чтобы index.js уведомил
+// авторов и ГМ).
+function pruneImageProposals() {
+  const now = Date.now();
+  const expired = [];
+  pendingImageProposals.forEach((p, id) => {
+    if (now - p.createdAt > config.IMAGE_PROPOSAL_TTL_MS) {
+      pendingImageProposals.delete(id);
+      expired.push(p);
+    }
+  });
+  return expired;
+}
+
+// Принимает предложение игрока в очередь. Возвращает { ok: true, proposal } или
+// { ok: false, reason }: 'invalid' | 'too-large' | 'pending-exists' | 'limit-reached' | 'cooldown' | 'too-many'.
+function proposeMapImage(characterId, authorName, payload) {
+  const { dataUrl, naturalWidth, naturalHeight, name, x, y, scale } = payload || {};
+  const parsed = parseImageDataUrl(dataUrl);
+  if (!parsed.ok) return { ok: false, reason: parsed.reason };
+  const w = Number(naturalWidth);
+  const h = Number(naturalHeight);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return { ok: false, reason: 'invalid' };
+  if (w > config.MAP_IMAGE_MAX_NATURAL_SIDE || h > config.MAP_IMAGE_MAX_NATURAL_SIDE) return { ok: false, reason: 'invalid' };
+  for (const p of pendingImageProposals.values()) {
+    if (p.characterId === characterId) return { ok: false, reason: 'pending-exists' };
+  }
+  // Лимит картинок игрока — по всем локациям: файлы лежат на диске, пока их не удалят.
+  const owned = state.mapImages.filter((m) => m.ownerId === characterId).length;
+  if (owned >= config.MAX_MAP_IMAGES_PER_PLAYER) return { ok: false, reason: 'limit-reached' };
+  const now = Date.now();
+  if (now - (lastProposalAt.get(characterId) || 0) < config.IMAGE_PROPOSAL_COOLDOWN_MS) return { ok: false, reason: 'cooldown' };
+  if (pendingImageProposals.size >= config.MAX_PENDING_IMAGE_PROPOSALS) return { ok: false, reason: 'too-many' };
+  const posX = Number(x);
+  const posY = Number(y);
+  // Позиция — где игрок смотрел в момент вставки (в окрестности домашней области
+  // локации); нет/мусор — addMapImage поставит в центр карты.
+  const pos = Number.isFinite(posX) && Number.isFinite(posY) ? clampImagePosition(getActiveLocation(), posX, posY) : null;
+  // Начальный масштаб подбирает клиент игрока (чтобы картинка влезла в часть экрана,
+  // а не ложилась в натуральную величину); сервер ограничивает его тем же потолком,
+  // что и дальнейшую правку владельцем.
+  const rawScale = Number(scale);
+  const maxScale = Math.min(10, config.PLAYER_IMAGE_MAX_SIDE_PX / Math.max(w, h));
+  const proposal = {
+    id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
+    dataUrl,
+    naturalWidth: w,
+    naturalHeight: h,
+    name: typeof name === 'string' ? name.trim().slice(0, config.MAP_IMAGE_NAME_MAX_LENGTH) : '',
+    x: pos ? pos.x : undefined,
+    y: pos ? pos.y : undefined,
+    scale: Number.isFinite(rawScale) && rawScale > 0 ? clamp(rawScale, 0.05, maxScale) : Math.min(1, maxScale),
+    characterId,
+    authorName: String(authorName || 'Игрок').slice(0, 60),
+    createdAt: now,
+  };
+  pendingImageProposals.set(proposal.id, proposal);
+  lastProposalAt.set(characterId, now);
+  return { ok: true, proposal };
+}
+
+function listImageProposals() {
+  return Array.from(pendingImageProposals.values());
+}
+
+// ГМ принял предложение: картинка попадает на карту АКТИВНОЙ локации (при
+// смене сцены очередь сбрасывается, см. clearImageProposals). { ok, entry, proposal } | { ok: false, reason }.
+function approveImageProposal(id) {
+  const proposal = pendingImageProposals.get(id);
+  if (!proposal) return { ok: false, reason: 'unknown' };
+  const entry = addMapImage(proposal.dataUrl, proposal.naturalWidth, proposal.naturalHeight, proposal.name || 'Вставка', proposal.x, proposal.y);
+  if (!entry) return { ok: false, reason: 'invalid' };
+  // Владелец — игрок-автор: дальше сам двигает/масштабирует/удаляет картинку
+  // (updateOwnedMapImage), пока ГМ не заблокирует 🔒. ownerName показывает ГМ в списке картинок.
+  entry.ownerId = proposal.characterId;
+  entry.ownerName = proposal.authorName;
+  entry.scale = proposal.scale;
+  pendingImageProposals.delete(id);
+  return { ok: true, entry, proposal };
+}
+
+// ГМ отклонил — возвращает предложение (для уведомления автора) или null.
+function rejectImageProposal(id) {
+  const proposal = pendingImageProposals.get(id);
+  if (!proposal) return null;
+  pendingImageProposals.delete(id);
+  return proposal;
+}
+
+// Смена сцены — предложения привязаны к прежней локации, сбрасываем все.
+function clearImageProposals() {
+  const all = listImageProposals();
+  pendingImageProposals.clear();
+  return all;
 }
 
 // ---- Рисование на карте --------------------------------------------------
@@ -1350,6 +1552,7 @@ module.exports = {
   moveLocation,
   renameLocation,
   setActiveLocation,
+  getActiveLocationId: () => state.activeLocationId,
   removeLocation,
   restorePartyResources,
   restorePartyEnergy,
@@ -1389,6 +1592,14 @@ module.exports = {
   addMapImage,
   updateMapImage,
   removeMapImage,
+  updateOwnedMapImage,
+  removeOwnedMapImage,
+  pruneImageProposals,
+  proposeMapImage,
+  listImageProposals,
+  approveImageProposal,
+  rejectImageProposal,
+  clearImageProposals,
   addDrawing,
   removeDrawing,
   undoLastDrawing,

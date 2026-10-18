@@ -9,6 +9,7 @@ import GmAttributesPanel from './GmAttributesPanel.vue';
 import ChatPanel from './ChatPanel.vue';
 import EffectsPanel from './EffectsPanel.vue';
 import LocationBadge from './LocationBadge.vue';
+import ImageProposals from './ImageProposals.vue';
 
 // gm.js (обычный не-модульный скрипт) грузится раньше этого бандла и
 // успевает выставить window.gmSocket/window.gmBridge синхронно при загрузке
@@ -108,6 +109,27 @@ window.locationBadgeApp = {
     locationBadgeStore.name = name || '';
   },
 };
+
+// ---- Предложения картинок от игроков (Ctrl+V с согласованием ГМ) ----
+// События mapimage:proposed / pending:sync / proposal:closed приходят в gm.js и
+// попадают сюда; плюс при монтировании сами запрашиваем очередь — события могли
+// прийти раньше, чем загрузился этот бандл, а сервер повторно их не шлёт.
+const imageProposalsStore = reactive({ proposals: [] });
+createApp(ImageProposals, { store: imageProposalsStore, bridge }).mount('#image-proposals-vue-root');
+window.imageProposalsApp = {
+  add(p) {
+    if (imageProposalsStore.proposals.some((x) => x.id === p.id)) return;
+    imageProposalsStore.proposals.push(p);
+    window.imageTools?.ping();
+  },
+  remove(id) {
+    imageProposalsStore.proposals = imageProposalsStore.proposals.filter((p) => p.id !== id);
+  },
+  sync(list) {
+    imageProposalsStore.proposals = Array.isArray(list) ? list : [];
+  },
+};
+socket.emit('mapimage:pending', {}, (list) => window.imageProposalsApp.sync(list));
 
 // ---- Верхняя панель (DC) ----
 const topBarStore = reactive({ currentDc: 0 });

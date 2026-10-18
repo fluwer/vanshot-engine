@@ -12,6 +12,7 @@ import DrawingPanel from './DrawingPanel.vue';
 import EffectsPanel from '../gm-panel/EffectsPanel.vue';
 import LocationBadge from '../gm-panel/LocationBadge.vue';
 import ActionRailPanel from './ActionRailPanel.vue';
+import MyImagesPanel from './MyImagesPanel.vue';
 
 // player.js (обычный не-модульный скрипт) грузится раньше этого бандла и
 // успевает выставить window.playerBridge синхронно при загрузке страницы —
@@ -51,6 +52,36 @@ createApp(SoundboardPanel, { bridge }).mount('#soundboard-panel-vue-root');
 createApp(MusicPanel, { bridge }).mount('#music-panel-vue-root');
 createApp(DrawingPanel, { bridge }).mount('#drawing-panel-vue-root');
 createApp(EffectsPanel, { bridge }).mount('#effects-panel-vue-root');
+
+// ---- Мои картинки: игрок правит СВОИ картинки на карте (после «Принять» ГМ) ----
+// Данные кормит player.js (state.mapImages, выбор картинки на канвасе). Панель по
+// умолчанию закрыта — открывается сама после принятия картинки (focus).
+const imagesStore = reactive({ images: [], myCharacterId: null, selectedId: null, editing: false });
+createApp(MyImagesPanel, { store: imagesStore, bridge }).mount('#images-panel-vue-root');
+window.imagesPanelApp = {
+  updateState(images) {
+    imagesStore.images = images || [];
+  },
+  setMyCharacterId(id) {
+    imagesStore.myCharacterId = id;
+  },
+  setSelected(id) {
+    imagesStore.selectedId = id;
+  },
+  // После «Принять»: открыть панель, включить режим правки, выделить картинку и показать её.
+  focus(id) {
+    const mc = bridge.mapController;
+    const panel = document.getElementById('images-panel');
+    if (panel) window.PanelDrag.showPanel(panel, 'playerPanel');
+    if (!mc) return;
+    mc.setImageEditMode(true);
+    imagesStore.editing = true;
+    mc.selectMapImage(id);
+    imagesStore.selectedId = id;
+    const img = imagesStore.images.find((m) => m.id === id);
+    if (img) mc.centerCameraOn(img.x, img.y);
+  },
+};
 
 // ---- Строка «Текущая локация» (общий компонент с ГМ) ----
 const locationBadgeStore = reactive({ name: '' });

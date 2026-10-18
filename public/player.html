@@ -56,11 +56,19 @@
       <div id="effects-panel-vue-root"></div>
     </div>
 
-    <div class="dice-overlay" id="dice-overlay">
-      <div class="card dice-stage" id="dice-stage"></div>
+    <!-- Мои картинки: игрок правит свои принятые ГМ картинки (по умолчанию закрыта) -->
+    <div class="overlay draggable-panel images-panel" id="images-panel">
+      <div class="overlay-head"><span>Картинки</span><span class="overlay-head-controls"></span></div>
+      <div id="images-panel-vue-root"></div>
     </div>
 
+    <!-- Кубики бросков: каждый бросок — свой d20, несколько одновременно (public/js/diceFx.js) -->
+    <div class="dfx-layer" id="dice-layer"></div>
+
     <div class="combat-start-overlay" id="combat-start-overlay"></div>
+
+    <!-- Приветствие сцены (public/js/scenefx.js); внутри #app — до входа скрыто -->
+    <div class="scene-intro-overlay" id="scene-intro-overlay" role="dialog" aria-modal="true"></div>
 
     <div class="chat-panel" id="chat-panel-vue-root"></div>
 
@@ -86,6 +94,7 @@
     <div class="drawer" id="tools-drawer">
       <div class="drawer-head"><h2>Окна</h2><button class="drawer-close" data-close="tools-drawer">✕</button></div>
       <div class="tools-panel-list" id="tools-drawer-list"></div>
+      <button type="button" class="tools-toggle-btn tools-reset-btn" id="tools-reset-layout" title="Вернуть окна на места по умолчанию, если какое-то потерялось">↺ Сбросить расположение окон</button>
     </div>
   </div>
 
@@ -93,6 +102,9 @@
   <script src="js/map.js"></script>
   <script src="js/dice.js"></script>
   <script src="js/combatfx.js"></script>
+  <script src="js/imagetools.js"></script>
+  <script src="js/diceFx.js"></script>
+  <script src="js/scenefx.js"></script>
   <script src="js/soundboard.js"></script>
   <script src="js/music.js"></script>
   <script src="js/chat.js"></script>

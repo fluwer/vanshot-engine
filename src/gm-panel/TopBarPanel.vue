@@ -35,6 +35,13 @@ function freeRoll() {
 function restoreParty() {
   props.bridge.socket.emit('party:restore');
 }
+
+// Вернуть окна на места по умолчанию (если какое-то потерялось): позиции, размеры,
+// свёрнутость — без перезагрузки страницы (panelDrag.js, resetLayout).
+function resetWindows() {
+  window.PanelDrag.resetLayout('gmPanel', { resetOpen: true });
+  window.imageTools?.notify('Окна возвращены на места', 'ok');
+}
 </script>
 
 <template>
@@ -53,5 +60,6 @@ function restoreParty() {
     <button class="small" @click="clearDc">сброс</button>
     <button @click="freeRoll" title="Бросок мастера (d20)">🎲</button>
     <button @click="restoreParty" title="Восстановить энергию и решимость всем">🔄</button>
+    <button @click="resetWindows" title="Сбросить расположение окон">↺</button>
   </div>
 </template>
