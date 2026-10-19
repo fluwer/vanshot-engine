@@ -82,6 +82,11 @@ party-popper
 bomb
 wand-sparkles
 
+# --- погода на экране (wind — выше, у спецэффектов)
+snowflake
+cloud-snow
+ban
+
 # --- навыки (server/data/skills.json)
 wrench
 lightbulb

@@ -133,10 +133,14 @@ h3 {
 /* ---- Сцена-стейдж: карта во весь экран ---- */
 .map-stage { position: fixed; inset: 0; overflow: hidden; }
 .map-stage .map-scroll { position: absolute; inset: 0; border: none; border-radius: 0; }
+/* Погода (public/js/weather.js): над холстом карты (поверх фишек и сетки), под HUD и панелями (z 4+);
+   клики пропускает; под картинками карты вырезана самим скриптом. */
+.weather-layer { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
 
 /* ================= Dock: левая панель инструментов + блоки (public/js/dock.js) =================
    Слоты .map-stage: левая панель и блок (z 7), журнал (7), нижняя панель (6), правая
-   колонка ГМ (5), .hud-top (4); кубики — 8 (.dfx-layer). Блок открыт максимум один.
+   колонка ГМ (5), .hud-top (4); кубики — 8 (.dfx-layer); погода — 1 (.weather-layer, над
+   холстом карты, под всем остальным). Блок открыт максимум один.
    --side-w — ширина колонки ГМ (0, если свёрнута/нет): от неё сдвигаются журнал и
    центр нижней панели, чтобы ничего не накладывалось. */
 .map-stage { --side-w: 0px; --rail-w: 72px; }
@@ -341,6 +345,11 @@ select.fog-btn { padding: 4px 28px 4px 8px; }
 
 /* ---- Панель спецэффектов: кнопки сеткой 2 в ряд (их шесть, «Фейерверк» в трёх колонках не влезает) ---- */
 .vfx-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
+
+/* ---- Погода в блоке «Эффекты» (EffectsPanel.vue): режим и интенсивность у ГМ, личный выключатель у всех ---- */
+.weather-section { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
+.weather-modes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
+.weather-intensity { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
 
 /* ---- Вкладки внутри блоков (Карта, Звук): общая раскладка ---- */
 .tab-pane-flex input[type=range] { width: 100%; margin: 0; }

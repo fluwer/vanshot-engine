@@ -82,4 +82,9 @@ module.exports = {
 
   // ---- Спецэффекты на карте ----
   VFX_TYPES: ['smoke', 'fire', 'firework', 'explosion', 'lightning', 'magic'], // доступные типы, transient — не хранятся в state/runtime.json
+
+  // ---- Погода на экране (одна на всю игру, задаёт ГМ; рисует клиент — public/js/weather.js) ----
+  WEATHER_MODES: ['off', 'cold', 'wind', 'blizzard'], // нет / холод / ветер / метель
+  WEATHER_INTENSITIES: [1, 2, 3], // слабо / средне / сильно
+  WEATHER_DEFAULT: { mode: 'cold', intensity: 1 }, // пока ГМ ничего не выбрал: лёгкий холод (стиль «Сквозь снег»)
 };

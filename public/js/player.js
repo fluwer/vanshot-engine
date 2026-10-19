@@ -308,6 +308,7 @@ socket.on('state', (state) => {
   window.locationBadgeApp?.updateState(state.activeLocationName);
   window.imagesPanelApp?.updateState(state.mapImages);
   renderChat(state.chat);
+  window.weather.onState(state); // погода на экране; холст скрыт до входа и ничего не рисует (public/js/weather.js)
   window.journal.onState(state); // непрочитанные и всплывашки чата (public/js/journal.js)
   window.combatPanelApp?.updateState(state.combat, state.npcs || []);
   applyMusicState(state.music);

@@ -332,6 +332,13 @@ io.on('connection', (socket) => {
     io.emit('vfx:play', { type, x, y });
   });
 
+  // Погода на экране — одна на всю игру, задаёт только мастер: { mode, intensity }.
+  // Рисует клиент (public/js/weather.js); значения проверяет setWeather.
+  socket.on('weather:set', (payload) => {
+    if (socket.data.role !== 'gm') return;
+    if (gameState.setWeather(payload)) broadcastState();
+  });
+
   socket.on('item:give', ({ characterId, item }) => {
     if (socket.data.role !== 'gm') return;
     gameState.giveItem(characterId, item);

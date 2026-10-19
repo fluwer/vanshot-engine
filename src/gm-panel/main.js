@@ -154,7 +154,7 @@ createApp(GmAttributesPanel, { store, bridge }).mount('#action-rail-vue-root');
 createApp(ChatPanel, { bridge, gmControls: true }).mount('#chat-panel-vue-root');
 
 // ---- Спецэффекты (дым/огонь/фейерверк) ----
-createApp(EffectsPanel, { bridge }).mount('#effects-panel-vue-root');
+createApp(EffectsPanel, { bridge, gm: true }).mount('#effects-panel-vue-root');
 
 // ---- Линейка (пункт левой панели; режим ведёт сама панель по dock:change) ----
 createApp(RulerPanel, { bridge }).mount('#ruler-panel-vue-root');

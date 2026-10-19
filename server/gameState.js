@@ -151,6 +151,9 @@ const state = {
   // pausedAt — позиция в секундах на момент постановки на паузу/остановки.
   // Громкость — чисто клиентская настройка, сюда не входит.
   music: (initialRuntime && initialRuntime.music) || { trackId: null, playing: false, startedAt: null, pausedAt: 0 },
+  // Погода на экране: одна на всю игру (не по локациям), задаёт ГМ — setWeather.
+  // Рисует клиент (public/js/weather.js), сервер только хранит и раздаёт.
+  weather: normalizeWeather(initialRuntime && initialRuntime.weather),
 };
 
 // Все персонажи стартуют по центру активной локации (пустая сетка без
@@ -934,6 +937,30 @@ function getFog() {
   return state.fog[state.activeLocationId] || '';
 }
 
+// ---- Погода на экране -----------------------------------------------------
+// Значение из runtime.json/клиента приводим к допустимому: неизвестный режим или
+// интенсивность заменяем значениями по умолчанию из config (функция объявлена
+// через function — state выше инициализируется ею).
+function normalizeWeather(raw) {
+  const def = config.WEATHER_DEFAULT;
+  const mode = raw && config.WEATHER_MODES.includes(raw.mode) ? raw.mode : def.mode;
+  const intensity = raw && config.WEATHER_INTENSITIES.includes(raw.intensity) ? raw.intensity : def.intensity;
+  return { mode, intensity };
+}
+
+// Меняет погоду (только мастер — гейт в index.js). Поля, которых нет в patch или
+// которые невалидны, остаются прежними; возвращает true, если что-то изменилось.
+function setWeather(patch) {
+  const p = patch || {};
+  const next = {
+    mode: config.WEATHER_MODES.includes(p.mode) ? p.mode : state.weather.mode,
+    intensity: config.WEATHER_INTENSITIES.includes(p.intensity) ? p.intensity : state.weather.intensity,
+  };
+  if (next.mode === state.weather.mode && next.intensity === state.weather.intensity) return false;
+  state.weather = next;
+  return true;
+}
+
 // ---- Музыка -------------------------------------------------------------
 // Мастер выбирает трек по id из манифеста (клиент знает файлы, сервер —
 // только непрозрачный id, как и с саундбордом). Позиция синхронизируется
@@ -1508,6 +1535,7 @@ function persistRuntimeState() {
     mapImages: state.mapImages,
     drawings: state.drawings,
     music: state.music,
+    weather: state.weather,
     activeLocationId: state.activeLocationId,
     characters: {},
     npcs: {},
@@ -1561,6 +1589,8 @@ function getPublicState() {
     // Музыка — общее состояние воспроизведения, видно всем (у каждого клиента
     // своя громкость, но трек и позиция синхронны).
     music: state.music,
+    // Погода — общая для всех и для всех локаций; личный выключатель у каждого клиента свой.
+    weather: state.weather,
     // Игрокам видны только NPC активной локации, которых мастер явно сделал
     // видимыми — и то без notes/secret: это заметки только для ГМ (см.
     // NpcInfoDialog.vue, поля «Заметки»/«Секрет»), их не фильтровали по
@@ -1634,6 +1664,7 @@ module.exports = {
   formatFreeRoll,
   setFog,
   getFog,
+  setWeather,
   setMusicTrack,
   playMusic,
   pauseMusic,

@@ -192,4 +192,5 @@ socket.on('state', (state) => {
   window.journal.onState(state);  // журнал: непрочитанные и всплывашки чата (public/js/journal.js)
   window.diceFx.onState(state);   // кубики: все новые броски, параллельно (public/js/diceFx.js)
   window.sceneFx.onState(state);  // приветствие сцены: при загрузке и при смене локации (public/js/scenefx.js)
+  window.weather.onState(state);  // погода на экране: холод/ветер/метель (public/js/weather.js)
 });

@@ -2092,6 +2092,11 @@ function createMapController({ canvas, role, myCharacterId }) {
     setImageEditMode: (v) => { imageEdit = !!v; if (imageEdit && role === 'gm') clearSelection(); if (!imageEdit) { imageDragging = null; imageResizing = null; imageRotating = null; selectedMapImageId = null; if (mapImageSelectHandler) mapImageSelectHandler(null); } draw(); if (lastHoverPoint) canvas.style.cursor = cursorForHover(lastHoverPoint.x, lastHoverPoint.y); },
     // Видимый размер мира в мировых px — для подбора начального масштаба вставляемой картинки.
     getViewSize: () => ({ w: canvas.width / camera.zoom, h: canvas.height / camera.zoom }),
+    // Для слоя погоды (public/js/weather.js): камера и размер холста — перевод мира в экран
+    // (sx = w/2 + (x - cam.x) * zoom) — и углы картинок в мировых координатах, чтобы вырезать
+    // погоду под каждой картинкой (с учётом поворота; отражение прямоугольник не меняет).
+    getView: () => ({ x: camera.x, y: camera.y, zoom: camera.zoom, w: canvas.width, h: canvas.height }),
+    getImageQuads: () => ((currentState && currentState.mapImages) || []).map(mapImageCorners),
     setMapImageSelectHandler: (fn) => { mapImageSelectHandler = fn; },
     setMapImageUpdateHandler: (fn) => { mapImageUpdateHandler = fn; },
     selectMapImage: (id) => { selectedMapImageId = id; draw(); },

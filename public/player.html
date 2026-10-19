@@ -21,6 +21,9 @@
       <canvas id="map-canvas"></canvas>
     </div>
 
+    <!-- Погода (холод/ветер/метель): над картой, с вырезом под картинки; клики пропускает (public/js/weather.js) -->
+    <canvas class="weather-layer" id="weather-canvas" aria-hidden="true"></canvas>
+
     <!-- Сверху по центру: текущая локация и (только в бою) полоса «Раунд/Ход» -->
     <div class="hud-top">
       <div id="location-badge-vue-root"></div>
@@ -113,6 +116,7 @@
   <script src="js/combatfx.js"></script>
   <script src="js/imagetools.js"></script>
   <script src="js/diceFx.js"></script>
+  <script src="js/weather.js"></script>
   <script src="js/scenefx.js"></script>
   <script src="js/soundboard.js"></script>
   <script src="js/music.js"></script>
