@@ -13,6 +13,13 @@ const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 30 * 1024 * 1024 });
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+// Список готовых картинок (аватары героев/NPC) строится по содержимому папки
+// public/avatars/presets — положил файл, и он появился в выборе; подписи и порядок — из
+// необязательного manifest.json рядом. Маршрут стоит ДО static, иначе отдался бы сам файл.
+app.get('/avatars/presets/manifest.json', (req, res) => {
+  res.set('Cache-Control', 'no-cache');
+  res.json(gameState.listAvatarPresets());
+});
 app.use(express.static(PUBLIC_DIR));
 
 // Текст подсказки для команды чата /help.
@@ -171,14 +178,23 @@ io.on('connection', (socket) => {
     broadcastState();
   });
 
+  // Готовая картинка герою (или presetUrl: null — убрать, останется буква) — только ГМ, из окна
+  // героя. Разрешены только файлы из public/avatars/presets (защита от произвольных URL).
   socket.on('avatar:set', ({ characterId, presetUrl }) => {
-    // Разрешаем только заранее заготовленные пресеты (защита от произвольных URL).
-    if (typeof presetUrl !== 'string' || !/^\/avatars\/presets\/[\w.-]+\.svg$/.test(presetUrl)) return;
+    if (socket.data.role !== 'gm') return;
+    if (presetUrl !== null && !gameState.isAvatarPresetUrl(presetUrl)) return;
     gameState.setCharacterAvatar(characterId, presetUrl);
     broadcastState();
   });
 
+  // Загруженная картинка: ГМ — любому герою, игрок — только своему (при входе), наблюдатель — нет.
   socket.on('avatar:upload', ({ characterId, dataUrl }, ack) => {
+    const allowed = socket.data.role === 'gm'
+      || (socket.data.role === 'player' && !!socket.data.characterId && socket.data.characterId === characterId);
+    if (!allowed) {
+      if (typeof ack === 'function') ack({ ok: false, reason: 'forbidden' });
+      return;
+    }
     const url = gameState.saveUploadedAvatar(characterId, dataUrl);
     if (typeof ack === 'function') ack({ ok: !!url, url });
     if (url) broadcastState();
@@ -713,7 +729,7 @@ io.on('connection', (socket) => {
 
   socket.on('npc:avatar:set', ({ npcId, presetUrl }) => {
     if (socket.data.role !== 'gm') return;
-    if (typeof presetUrl !== 'string' || !/^\/avatars\/presets\/[\w.-]+\.svg$/.test(presetUrl)) return;
+    if (presetUrl !== null && !gameState.isAvatarPresetUrl(presetUrl)) return; // null — убрать картинку
     gameState.setNpcAvatar(npcId, presetUrl);
     broadcastState();
   });

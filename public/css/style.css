@@ -53,10 +53,22 @@ h3 {
 .npc-mini { cursor: pointer; }
 .char-mini.selected, .npc-mini.selected { border-color: var(--accent-line); box-shadow: 0 0 0 1px var(--accent-bg-strong); }
 .npc-avatar-preset {
-  width: 22px; height: 22px; border-radius: 50%;
+  width: 22px; height: 22px; border-radius: 50%; object-fit: cover; object-position: 50% 25%;
   border: 1px solid transparent; cursor: pointer; background: var(--field);
 }
 .npc-avatar-preset:hover { border-color: var(--line-strong); }
+.npc-avatar-preset.selected { border-color: var(--accent); }
+/* Блок «Аватар» в окнах героя и NPC (CharacterInfoDialog.vue): превью + миниатюры готовых картинок + загрузка */
+.avatar-edit { display: flex; flex-direction: column; gap: 8px; }
+.avatar-edit-head { display: flex; align-items: center; gap: 12px; }
+.avatar-edit-preview {
+  width: 64px; height: 64px; border-radius: 50%; flex-shrink: 0;
+  object-fit: cover; object-position: 50% 25%; border: 2px solid var(--accent); background: var(--field);
+}
+.avatar-edit-fallback { display: inline-flex; align-items: center; justify-content: center; color: #fff; font-weight: 600; font-size: 26px; }
+.avatar-edit-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.avatar-edit-presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 6px; max-height: 120px; overflow-y: auto; }
+.avatar-edit-presets .npc-avatar-preset { width: 100%; height: auto; aspect-ratio: 1 / 1; }
 
 /* ---- Кубик (кубики инициативы в combatfx.js; на карте — diceFx.js) ---- */
 .dice-stage {
@@ -108,19 +120,18 @@ h3 {
   padding: 10px;
   margin: 10px 0;
 }
-.avatar-picker-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+/* Картинка героя при входе: превью (картинка героя по умолчанию либо своя загруженная) + «Загрузить свой аватар».
+   Готовые картинки игрок не выбирает — их задаёт ГМ в окне героя. Квадрат с обрезкой «центр, чуть выше»
+   (object-position) — как на токене карты. */
+.avatar-picker-row { display: flex; align-items: center; gap: 12px; }
+.avatar-picker-side { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
+.avatar-picker-title { font-size: 13px; color: var(--text-2); }
 .avatar-preview {
-  width: 44px; height: 44px; border-radius: 50%;
-  object-fit: cover; border: 2px solid var(--accent); display: none; background: var(--field);
+  width: 72px; height: 72px; border-radius: 50%; flex-shrink: 0;
+  object-fit: cover; object-position: 50% 25%; border: 2px solid var(--accent); background: var(--field);
 }
-.avatar-preview.visible { display: inline-block; }
-.preset-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
-.preset-option {
-  width: 100%; aspect-ratio: 1 / 1; border-radius: 50%;
-  border: 2px solid transparent; cursor: pointer; background: var(--field);
-}
-.preset-option:hover { border-color: var(--line-strong); }
-.preset-option.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-bg-strong); }
+.avatar-preview-fallback { display: inline-flex; align-items: center; justify-content: center; color: #fff; font-weight: 600; font-size: 28px; }
+.avatar-preview-empty { border-style: dashed; border-color: var(--line-strong); }
 .upload-label {
   display: flex; box-sizing: border-box; width: 100%; margin-top: 10px;
   font-size: 13px; text-align: center;
@@ -736,7 +747,7 @@ select.fog-btn { padding: 4px 28px 4px 8px; }
 .gm-stat-row button { flex-shrink: 0; padding: 3px 7px; }
 
 .gm-avatar {
-  width: 32px; height: 32px; border-radius: 50%; object-fit: cover;
+  width: 32px; height: 32px; border-radius: 50%; object-fit: cover; object-position: 50% 25%;
   border: 1px solid var(--line); flex-shrink: 0;
 }
 .gm-avatar-fallback {

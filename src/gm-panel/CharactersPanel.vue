@@ -135,9 +135,14 @@ function onAddNpc(data) {
     v-if="infoCharacter"
     :character="infoCharacter"
     :skills-catalog="store.skillsCatalog"
+    :avatar-preset-urls="bridge.getNpcAvatarPresetUrls()"
+    :resize-image="bridge.resizeImage"
     @close="infoCharacterId = null"
     @code-regenerate="emitCharacter('character:code:regenerate', infoCharacter.id)"
     @update="(data) => emitCharacter('character:update', infoCharacter.id, { data })"
+    @avatar-preset="(presetUrl) => emitCharacter('avatar:set', infoCharacter.id, { presetUrl })"
+    @avatar-upload="(dataUrl) => emitCharacter('avatar:upload', infoCharacter.id, { dataUrl })"
+    @avatar-clear="emitCharacter('avatar:set', infoCharacter.id, { presetUrl: null })"
     @remove="onRemoveCharacter(infoCharacter.id)"
   />
   <NpcInfoDialog
@@ -149,6 +154,7 @@ function onAddNpc(data) {
     @update="(data) => emitNpc('npc:update', infoNpc.id, { data })"
     @avatar-preset="(presetUrl) => emitNpc('npc:avatar:set', infoNpc.id, { presetUrl })"
     @avatar-upload="(dataUrl) => emitNpc('npc:avatar:upload', infoNpc.id, { dataUrl })"
+    @avatar-clear="emitNpc('npc:avatar:set', infoNpc.id, { presetUrl: null })"
     @remove="onRemoveNpc(infoNpc.id)"
   />
 </template>

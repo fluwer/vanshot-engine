@@ -1835,7 +1835,16 @@ function createMapController({ canvas, role, myCharacterId }) {
         ctx.beginPath();
         ctx.arc(cx, cy, r, 0, Math.PI * 2);
         ctx.clip();
-        ctx.drawImage(avatarImg, cx - r, cy - r, r * 2, r * 2);
+        // Аватар любых пропорций (в том числе положенный в папку руками) — обрезка до квадрата:
+        // по горизонтали центр, по вертикали чуть выше центра (лица), иначе картинка сплющилась бы.
+        const iw = avatarImg.naturalWidth || avatarImg.width;
+        const ih = avatarImg.naturalHeight || avatarImg.height;
+        if (iw > 0 && ih > 0) {
+          const side = Math.min(iw, ih);
+          ctx.drawImage(avatarImg, (iw - side) / 2, (ih - side) * 0.25, side, side, cx - r, cy - r, r * 2, r * 2);
+        } else {
+          ctx.drawImage(avatarImg, cx - r, cy - r, r * 2, r * 2);
+        }
         ctx.restore();
         ctx.beginPath();
         ctx.arc(cx, cy, r, 0, Math.PI * 2);

@@ -621,13 +621,63 @@ function setDc(dc) {
   state.currentDc = Number.isFinite(value) && value > 0 ? value : null;
 }
 
+// ---- Готовые картинки (public/avatars/presets) ------------------------------
+// Любой формат картинки; список строится по содержимому папки (положил файл — он появился
+// в выборе), подписи и порядок — из необязательного manifest.json рядом. Имена файлов —
+// латиница, цифры, «-», «_», «.»: так их безопасно подставлять в URL и проверять на сервере.
+const PRESETS_DIR = path.join(__dirname, '..', 'public', 'avatars', 'presets');
+const PRESET_NAME_RE = /^[\w.-]+\.(svg|png|jpe?g|webp|gif)$/i;
+
+// Допустимая «готовая» картинка: URL вида /avatars/presets/имя.расширение и такой файл есть.
+function isAvatarPresetUrl(url) {
+  if (typeof url !== 'string') return false;
+  const m = /^\/avatars\/presets\/([^/]+)$/.exec(url);
+  if (!m || !PRESET_NAME_RE.test(m[1])) return false;
+  try {
+    return fs.statSync(path.join(PRESETS_DIR, m[1])).isFile();
+  } catch (err) {
+    return false;
+  }
+}
+
+// Список для выбора: [{ id, url, label }]. Сначала в порядке manifest.json (если файл ещё
+// на месте), затем остальные по алфавиту; подпись — из манифеста или имя файла без расширения.
+function listAvatarPresets() {
+  let files = [];
+  try {
+    files = fs.readdirSync(PRESETS_DIR, { withFileTypes: true })
+      .filter((d) => d.isFile() && PRESET_NAME_RE.test(d.name))
+      .map((d) => d.name);
+  } catch (err) {
+    return [];
+  }
+  let manifest = [];
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(PRESETS_DIR, 'manifest.json'), 'utf-8'));
+    if (Array.isArray(raw)) manifest = raw.filter((e) => e && typeof e.url === 'string');
+  } catch (err) { /* манифест необязателен */ }
+  const byUrl = new Map(manifest.map((e) => [e.url, e]));
+  const toItem = (name) => {
+    const url = `/avatars/presets/${name}`;
+    const base = name.replace(/\.[^.]+$/, '');
+    const e = byUrl.get(url);
+    return { id: (e && e.id) || base, url, label: (e && e.label) || base.replace(/[-_]+/g, ' ') };
+  };
+  const present = new Set(files);
+  const ordered = manifest
+    .map((e) => e.url.replace('/avatars/presets/', ''))
+    .filter((name) => present.has(name));
+  const rest = files.filter((name) => !ordered.includes(name)).sort((a, b) => a.localeCompare(b));
+  return [...ordered, ...rest].map(toItem);
+}
+
 // Сохраняет назначение аватара персонажу и персистит его в avatars.json,
-// чтобы выбор пережил перезапуск сервера.
+// чтобы выбор пережил перезапуск сервера. url = null — убрать (останется буква-заглушка).
 function setCharacterAvatar(characterId, url) {
   const c = findCharacter(characterId);
   if (!c) return;
-  c.avatar = url;
-  avatarAssignments[characterId] = url;
+  c.avatar = url || null;
+  if (url) avatarAssignments[characterId] = url; else delete avatarAssignments[characterId];
   try {
     fs.writeFileSync(AVATARS_FILE, JSON.stringify(avatarAssignments, null, 2));
   } catch (err) {
@@ -646,11 +696,18 @@ function saveUploadedAvatar(characterId, dataUrl) {
   const buffer = Buffer.from(match[2], 'base64');
   if (buffer.length > config.AVATAR_UPLOAD_MAX_SIZE) return null; // защита от гигантских картинок
   if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-  const fileName = `${characterId}-${Date.now()}.${ext}`;
+  const fileName = uploadFileName(characterId, ext);
   fs.writeFileSync(path.join(UPLOADS_DIR, fileName), buffer);
   const url = `/avatars/uploads/${fileName}`;
   setCharacterAvatar(characterId, url);
   return url;
+}
+
+// Имя файла загруженной картинки — только латиница/цифры (id героя может быть кириллицей:
+// такое имя в URL и в avatars.json только путало бы) + время и случайный хвост против коллизий.
+function uploadFileName(ownerId, ext) {
+  const safe = String(ownerId).replace(/[^a-z0-9]+/gi, '').slice(0, 24) || 'avatar';
+  return `${safe}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${ext}`;
 }
 
 // NPC не хранят аватар в отдельном файле (как персонажи в avatars.json) —
@@ -676,7 +733,7 @@ function saveUploadedNpcAvatar(npcId, dataUrl) {
   const buffer = Buffer.from(match[2], 'base64');
   if (buffer.length > config.AVATAR_UPLOAD_MAX_SIZE) return null; // защита от гигантских картинок
   if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-  const fileName = `${npcId}-${Date.now()}.${ext}`;
+  const fileName = uploadFileName(npcId, ext);
   fs.writeFileSync(path.join(UPLOADS_DIR, fileName), buffer);
   const url = `/avatars/uploads/${fileName}`;
   setNpcAvatar(npcId, url);
@@ -1854,6 +1911,8 @@ module.exports = {
   isCharacterDead,
   setNpcVisible,
   setNpcNameHidden,
+  isAvatarPresetUrl,
+  listAvatarPresets,
   publicCombatOrder,
   setNpcDead,
   setNpcFaction,

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import Icon from '../gm-panel/Icon.vue';
 
 const props = defineProps({
@@ -12,20 +12,15 @@ const characterId = ref('');
 const code = ref('');
 const error = ref('');
 
-const presets = ref([]);
-const selectedAvatar = ref(null); // { type: 'preset', url } | { type: 'upload', dataUrl }
-
-const avatarPreviewUrl = computed(() => {
-  if (!selectedAvatar.value) return '';
-  return selectedAvatar.value.type === 'preset' ? selectedAvatar.value.url : selectedAvatar.value.dataUrl;
-});
+// Картинку героя задаёт ГМ (окно героя) — при выборе героя в списке сразу показываем её.
+// Игрок может лишь загрузить СВОЮ (dataUrl, квадрат 128×128 PNG): она станет картинкой этого героя после входа.
+const uploadedAvatar = ref(null);
+const selectedHero = computed(() => props.store.characters.find((c) => c.id === characterId.value) || null);
+const avatarPreviewUrl = computed(() => uploadedAvatar.value || (selectedHero.value && selectedHero.value.avatar) || '');
+// Другой герой — загруженный файл сбрасываем, чтобы он не уехал чужому герою.
+watch(characterId, () => { uploadedAvatar.value = null; });
 
 onMounted(() => {
-  fetch('/avatars/presets/manifest.json')
-    .then((r) => (r.ok ? r.json() : []))
-    .catch(() => [])
-    .then((list) => { presets.value = Array.isArray(list) ? list : []; });
-
   // Предзаполнение из сохранённой сессии (см. player.js) — код НЕ
   // показываем в поле: он нужен только для тихого авто-рджойна при
   // коннекте, обычный пользователь его тут не вводил.
@@ -36,15 +31,12 @@ onMounted(() => {
   }
 });
 
-function selectPreset(p) {
-  selectedAvatar.value = { type: 'preset', url: p.url };
-}
-
 function onFileChange(e) {
   const file = e.target.files && e.target.files[0];
+  e.target.value = '';
   if (!file) return;
   props.bridge.resizeImage(file, 128, (dataUrl) => {
-    selectedAvatar.value = { type: 'upload', dataUrl };
+    uploadedAvatar.value = dataUrl;
   });
 }
 
@@ -79,10 +71,9 @@ function join() {
     // авто-рджойном в player.js, без этой формы.
     props.bridge.saveSession?.({ characterId: cid, name: nm, code: cd });
 
-    if (selectedAvatar.value && selectedAvatar.value.type === 'preset') {
-      props.bridge.socket.emit('avatar:set', { characterId: cid, presetUrl: selectedAvatar.value.url });
-    } else if (selectedAvatar.value && selectedAvatar.value.type === 'upload') {
-      props.bridge.socket.emit('avatar:upload', { characterId: cid, dataUrl: selectedAvatar.value.dataUrl });
+    // Свою картинку отправляем после входа (сервер принимает её только от игрока своему герою).
+    if (uploadedAvatar.value) {
+      props.bridge.socket.emit('avatar:upload', { characterId: cid, dataUrl: uploadedAvatar.value });
     }
 
     props.bridge.onJoined({ characterId: cid, name: nm });
@@ -112,29 +103,26 @@ function join() {
   <div class="join-error" :class="{ hidden: !error }">{{ error }}</div>
 
   <div class="avatar-picker">
-    <div class="avatar-picker-head">
-      <span>Аватар</span>
-      <img class="avatar-preview" :class="{ visible: avatarPreviewUrl }" :src="avatarPreviewUrl" alt="">
+    <div class="avatar-picker-row">
+      <img v-if="avatarPreviewUrl" class="avatar-preview" :src="avatarPreviewUrl" alt="">
+      <span
+        v-else-if="selectedHero"
+        class="avatar-preview avatar-preview-fallback"
+        :style="{ background: selectedHero.color || '#888888' }"
+      >{{ selectedHero.name[0] }}</span>
+      <span v-else class="avatar-preview avatar-preview-empty"></span>
+      <div class="avatar-picker-side">
+        <span class="avatar-picker-title">{{ uploadedAvatar ? 'Ваша картинка — применится при входе' : (selectedHero ? 'Картинка героя' : 'Выберите героя — здесь появится его картинка') }}</span>
+        <label class="upload-label upload-inline">
+          <Icon name="upload" /> Загрузить свой аватар
+          <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden @change="onFileChange">
+        </label>
+        <button v-if="uploadedAvatar" type="button" class="small" @click="uploadedAvatar = null"><Icon name="x" /> Вернуть картинку героя</button>
+      </div>
     </div>
-    <div class="preset-grid">
-      <img
-        v-for="p in presets"
-        :key="p.url"
-        :src="p.url"
-        :alt="p.label"
-        :title="p.label"
-        class="preset-option"
-        :class="{ selected: selectedAvatar && selectedAvatar.type === 'preset' && selectedAvatar.url === p.url }"
-        @click="selectPreset(p)"
-      >
-    </div>
-    <label class="upload-label">
-      <Icon name="upload" /> Загрузить свой аватар
-      <input type="file" accept="image/*" hidden @change="onFileChange">
-    </label>
     <p class="avatar-upload-hint muted small">
-      Форматы: JPG, PNG, GIF, WebP. Картинка автоматически уменьшается до 128×128 —
-      лучше всего смотрится квадратное фото (аватар отображается кругом).
+      Свою картинку можно загрузить в формате JPG, PNG, GIF или WebP: она обрежется до квадрата 128×128
+      (по центру, чуть выше — для лиц), станет картинкой вашего героя и отображается кругом.
     </p>
   </div>
 

@@ -29,6 +29,26 @@
     return false;
   }
 
+  // Аватар героя/NPC из файла: обрезка до квадрата size×size (по горизонтали центр, по вертикали
+  // чуть выше центра — на портретах там лицо) и PNG — прозрачность сохраняется (JPEG дал бы чёрный
+  // фон). Маленькую картинку не растягиваем. Токен рисует аватар кругом, поэтому квадрат — единственный
+  // формат, который не сплющивается. Бросает Error с текстом для пользователя.
+  async function avatarFromFile(file, size) {
+    if (!file || !ALLOWED_TYPES.includes(file.type)) throw new Error('Это не картинка (поддерживаются PNG, JPEG, WebP, GIF)');
+    if (file.size > RAW_FILE_LIMIT) throw new Error('Файл слишком большой (больше 25 МБ)');
+    const img = await loadImage(file);
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    if (!w || !h) throw new Error('Не удалось прочитать картинку');
+    const side = Math.min(w, h);
+    const out = Math.max(1, Math.min(size || 128, side));
+    const canvas = document.createElement('canvas');
+    canvas.width = out;
+    canvas.height = out;
+    canvas.getContext('2d').drawImage(img, (w - side) / 2, (h - side) * 0.25, side, side, 0, 0, out, out);
+    return canvas.toDataURL('image/png');
+  }
+
   // Файл → { dataUrl, w, h } для отправки на сервер. Бросает Error с текстом для пользователя.
   // Без прозрачности — JPEG 0.85, как раньше; с прозрачностью — WebP (Safari вернёт PNG,
   // он тоже держит альфу), иначе вырезанные PNG получили бы чёрный фон.
@@ -140,5 +160,5 @@
     } catch (err) { /* звук необязателен */ }
   }
 
-  window.imageTools = { encodeFile, clipboardImageFiles, shouldIgnorePaste, imageName, notify, ping };
+  window.imageTools = { encodeFile, avatarFromFile, clipboardImageFiles, shouldIgnorePaste, imageName, notify, ping };
 })();

@@ -22,25 +22,12 @@ fetch('/avatars/presets/manifest.json')
     npcAvatarPresetUrls = (Array.isArray(list) ? list : []).map((p) => p.url);
   });
 
-// Масштабирует картинку в offscreen-canvas до maxSize по большей стороне
-// и отдаёт JPEG data URL — как в player.js, но своя копия (нет общего модуля).
+// Аватар из файла: квадрат maxSize×maxSize (обрезка по центру, чуть выше — лица), PNG с
+// прозрачностью — общая логика в public/js/imagetools.js (avatarFromFile).
 function resizeImage(file, maxSize, cb) {
-  const reader = new FileReader();
-  reader.onload = () => {
-    const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
-      const w = Math.round(img.width * scale);
-      const h = Math.round(img.height * scale);
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      cb(canvas.toDataURL('image/jpeg', 0.8));
-    };
-    img.src = reader.result;
-  };
-  reader.readAsDataURL(file);
+  window.imageTools.avatarFromFile(file, maxSize).then(cb).catch((err) => {
+    window.imageTools.notify((err && err.message) || 'Не удалось прочитать картинку', 'error');
+  });
 }
 
 const mapController = createMapController({

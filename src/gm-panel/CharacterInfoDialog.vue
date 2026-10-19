@@ -2,13 +2,16 @@
 import { ref, watch } from 'vue';
 import Modal from './Modal.vue';
 import Icon from './Icon.vue';
+import AvatarEditor from './AvatarEditor.vue';
 import { vAutosize } from './autosize.js';
 
 const props = defineProps({
   character: { type: Object, required: true },
   skillsCatalog: { type: Object, default: () => ({}) },
+  avatarPresetUrls: { type: Array, default: () => [] },
+  resizeImage: { type: Function, default: null },
 });
-const emit = defineEmits(['close', 'update', 'code-regenerate', 'remove']);
+const emit = defineEmits(['close', 'update', 'code-regenerate', 'remove', 'avatar-preset', 'avatar-upload', 'avatar-clear']);
 
 const name = ref('');
 const title = ref('');
@@ -20,12 +23,13 @@ const mind = ref(0);
 const charisma = ref(0);
 const skills = ref([]);
 
-// Поля инициализируются из character при каждом открытии диалога (переоткрытие
-// на другом персонаже — новый v-if-инстанс, watch с immediate — на случай
-// живого обновления character, пока диалог открыт).
+// Поля инициализируются из character при открытии диалога и при смене героя, но НЕ при каждой
+// рассылке state (она подменяет объект героя): иначе любой чужой бросок или смена картинки
+// стирали бы набранный, но ещё не сохранённый текст.
 watch(
-  () => props.character,
-  (c) => {
+  () => props.character.id,
+  () => {
+    const c = props.character;
     name.value = c.name || '';
     title.value = c.title || '';
     hook.value = c.hook || '';
@@ -75,6 +79,19 @@ function remove() {
       <button class="small char-code-regen" @click="emit('code-regenerate')">Новый код</button>
     </div>
 
+    <div v-if="resizeImage" class="form-field">
+      <span class="form-field-label">Аватар</span>
+      <AvatarEditor
+        :url="character.avatar || null"
+        :name="character.name"
+        :color="character.color || '#888888'"
+        :presets="avatarPresetUrls"
+        :resize-image="resizeImage"
+        @preset="(url) => emit('avatar-preset', url)"
+        @upload="(dataUrl) => emit('avatar-upload', dataUrl)"
+        @clear="emit('avatar-clear')"
+      />
+    </div>
     <div class="form-field">
       <span class="form-field-label">Имя</span>
       <input v-model="name">

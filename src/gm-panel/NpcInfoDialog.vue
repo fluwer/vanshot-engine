@@ -1,7 +1,7 @@
 <script setup>
 import { ref, watch } from 'vue';
 import Modal from './Modal.vue';
-import Icon from './Icon.vue';
+import AvatarEditor from './AvatarEditor.vue';
 import { vAutosize } from './autosize.js';
 
 const props = defineProps({
@@ -9,7 +9,7 @@ const props = defineProps({
   avatarPresetUrls: { type: Array, default: () => [] },
   resizeImage: { type: Function, required: true },
 });
-const emit = defineEmits(['close', 'update', 'avatar-preset', 'avatar-upload', 'remove']);
+const emit = defineEmits(['close', 'update', 'avatar-preset', 'avatar-upload', 'avatar-clear', 'remove']);
 
 const name = ref('');
 const role = ref('');
@@ -19,9 +19,12 @@ const body = ref(0);
 const mind = ref(0);
 const charisma = ref(0);
 
+// Поля — из NPC при открытии диалога (не при каждой рассылке state: она подменяет объект NPC, и
+// смена картинки или чужой бросок стирали бы набранный, но не сохранённый текст).
 watch(
-  () => props.npc,
-  (n) => {
+  () => props.npc.id,
+  () => {
+    const n = props.npc;
     name.value = n.name || '';
     role.value = n.role || '';
     notes.value = n.notes || '';
@@ -32,12 +35,6 @@ watch(
   },
   { immediate: true },
 );
-
-function onFileChange(e) {
-  const file = e.target.files && e.target.files[0];
-  if (!file) return;
-  props.resizeImage(file, 128, (dataUrl) => emit('avatar-upload', dataUrl));
-}
 
 function save() {
   emit('update', {
@@ -61,15 +58,18 @@ function remove() {
   <Modal @close="emit('close')">
     <template #title>NPC: {{ npc.name }}</template>
 
-    <div class="row" style="gap:4px; flex-wrap:wrap">
-      <img
-        v-for="url in avatarPresetUrls"
-        :key="url"
-        class="npc-avatar-preset"
-        :src="url"
-        @click="emit('avatar-preset', url)"
-      >
-      <label class="upload-label upload-inline"><Icon name="upload" /> Свой файл<input type="file" accept="image/*" class="npc-avatar-file" hidden @change="onFileChange"></label>
+    <div class="form-field">
+      <span class="form-field-label">Аватар</span>
+      <AvatarEditor
+        :url="npc.avatar || null"
+        :name="npc.name"
+        color="#c05656"
+        :presets="avatarPresetUrls"
+        :resize-image="resizeImage"
+        @preset="(url) => emit('avatar-preset', url)"
+        @upload="(dataUrl) => emit('avatar-upload', dataUrl)"
+        @clear="emit('avatar-clear')"
+      />
     </div>
 
     <div class="form-field">

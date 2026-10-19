@@ -13,6 +13,7 @@
   let tipEl = null;
   let current = null; // элемент, для которого подсказка показана или ожидается
   let timer = null;
+  let viaKeyboard = false; // подсказка вызвана фокусом с клавиатуры (а не наведением мыши)
 
   function ensureEl() {
     if (!tipEl) {
@@ -28,6 +29,7 @@
     clearTimeout(timer);
     timer = null;
     current = null;
+    viaKeyboard = false;
     if (tipEl) tipEl.classList.remove('tip-visible');
   }
 
@@ -53,9 +55,10 @@
     tipEl.classList.add('tip-visible');
   }
 
-  function schedule(target, delay) {
+  function schedule(target, delay, keyboard) {
     hide();
     current = target;
+    viaKeyboard = !!keyboard;
     if (delay > 0) timer = setTimeout(() => show(target), delay);
     else show(target);
   }
@@ -64,6 +67,9 @@
 
   document.addEventListener('pointerover', (e) => {
     if (e.pointerType === 'touch') return; // на таче наведения нет
+    // Подсказка от клавиатурного фокуса: браузер после прокрутки/смены раскладки шлёт «фальшивые» события
+    // мыши под неподвижным курсором (movement = 0) — они не должны её гасить.
+    if (viaKeyboard && !e.movementX && !e.movementY) return;
     const target = tipTarget(e.target);
     if (target === current) return;
     if (target) schedule(target, SHOW_DELAY_MS); else hide();
@@ -74,12 +80,20 @@
   // иначе она возвращалась бы после каждого клика по кнопке.
   document.addEventListener('focusin', (e) => {
     const target = tipTarget(e.target);
-    if (target && e.target.matches && e.target.matches(':focus-visible')) schedule(target, 0);
+    if (target && e.target.matches && e.target.matches(':focus-visible')) schedule(target, 0, true);
   });
   document.addEventListener('focusout', hide);
   document.addEventListener('pointerdown', hide, true);
   document.addEventListener('keydown', hide, true);
-  document.addEventListener('scroll', hide, true);
+  // Прокрутка: подсказку мышью гасим (элемент уезжает из-под курсора), а у элемента с клавиатурным фокусом
+  // оставляем и переставляем — иначе Tab на пункт ниже границы окна сам прокручивал бы контейнер и гасил её.
+  document.addEventListener('scroll', () => {
+    if (current && tipEl && tipEl.classList.contains('tip-visible') && document.contains(current) && current.matches(':focus-within')) {
+      place(current);
+      return;
+    }
+    hide();
+  }, true);
   window.addEventListener('resize', hide);
 
   window.Tooltip = { hide };
