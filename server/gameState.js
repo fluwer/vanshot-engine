@@ -11,7 +11,62 @@ const FOG_FILE = path.join(DATA_DIR, 'fog.json');
 const LOCATIONS_FILE = path.join(DATA_DIR, 'locations.json');
 const CHAT_FILE = path.join(DATA_DIR, 'chat.json');
 const RUNTIME_FILE = path.join(DATA_DIR, 'runtime.json');
-const UPLOADS_DIR = path.join(__dirname, '..', 'public', 'avatars', 'uploads');
+const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+
+// Всё, что программа сама записывает или что ГМ «подкладывает» (загруженные аватары и картинки карты,
+// загруженные музыка и звуки, свои готовые картинки героев), лежит в data/: это единственный каталог,
+// который в Docker вынесен на диск хоста (volume), а public/ и server/ запечены в образ и при каждой
+// пересборке создаются заново — всё, что лежало бы в public/, пропадало бы. index.js отдаёт эти папки
+// через express.static под прежними адресами (/avatars/uploads/…, /avatars/map-images/…,
+// /avatars/presets/…, /assets/music|sounds/…), поэтому клиент и сохранённые ссылки не меняются.
+const UPLOADS_ROOT = path.join(DATA_DIR, 'uploads');
+const UPLOADS_DIR = path.join(UPLOADS_ROOT, 'avatars');            // /avatars/uploads/…
+const MAP_IMAGES_DIR = path.join(UPLOADS_ROOT, 'map-images');      // /avatars/map-images/…
+const USER_PRESETS_DIR = path.join(DATA_DIR, 'presets');           // /avatars/presets/… — сюда кладёт файлы ГМ
+const AUDIO_LIBRARY_FILE = path.join(DATA_DIR, 'audio-library.json'); // музыка/звуки, добавленные и скрытые ГМ
+const AUDIO_UPLOAD_DIRS = {
+  music: path.join(UPLOADS_ROOT, 'music'),                         // /assets/music/…
+  sounds: path.join(UPLOADS_ROOT, 'sounds'),                       // /assets/sounds/…
+};
+
+// Раньше загруженные аватары и картинки карты писались прямо в public/avatars/{uploads,map-images}.
+// Если там что-то осталось (локальная разработка, контейнер, в который файлы вернули через docker cp),
+// переносим в data/ при старте: адреса остаются прежними, но файлы больше не зависят от образа.
+function moveFile(from, to) {
+  try {
+    fs.renameSync(from, to);
+  } catch (err) {
+    fs.copyFileSync(from, to); // другой диск (volume): rename невозможен
+    fs.unlinkSync(from);
+  }
+}
+(function migrateLegacyUploads() {
+  [
+    [path.join(PUBLIC_DIR, 'avatars', 'uploads'), UPLOADS_DIR],
+    [path.join(PUBLIC_DIR, 'avatars', 'map-images'), MAP_IMAGES_DIR],
+  ].forEach(([from, to]) => {
+    let names = [];
+    try {
+      names = fs.readdirSync(from, { withFileTypes: true }).filter((d) => d.isFile() && !d.name.startsWith('.')).map((d) => d.name);
+    } catch (err) {
+      return; // старой папки нет — переносить нечего
+    }
+    if (!names.length) return;
+    fs.mkdirSync(to, { recursive: true });
+    let moved = 0;
+    names.forEach((name) => {
+      const target = path.join(to, name);
+      if (fs.existsSync(target)) return;
+      try {
+        moveFile(path.join(from, name), target);
+        moved += 1;
+      } catch (err) {
+        console.warn(`Не удалось перенести ${name}:`, err.message);
+      }
+    });
+    if (moved) console.log(`Перенесено файлов: ${moved} (${from} → ${to})`);
+  });
+}());
 
 const characters = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'characters.json'), 'utf-8'));
 const npcs = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'npcs.json'), 'utf-8'));
@@ -621,42 +676,51 @@ function setDc(dc) {
   state.currentDc = Number.isFinite(value) && value > 0 ? value : null;
 }
 
-// ---- Готовые картинки (public/avatars/presets) ------------------------------
-// Любой формат картинки; список строится по содержимому папки (положил файл — он появился
-// в выборе), подписи и порядок — из необязательного manifest.json рядом. Имена файлов —
-// латиница, цифры, «-», «_», «.»: так их безопасно подставлять в URL и проверять на сервере.
-const PRESETS_DIR = path.join(__dirname, '..', 'public', 'avatars', 'presets');
+// ---- Готовые картинки героев/NPC --------------------------------------------
+// Две папки с одинаковыми адресами /avatars/presets/…: data/presets (кладёт ГМ — переживает пересборку
+// Docker, главнее) и public/avatars/presets (поставляется с движком). Любой формат картинки; список
+// строится по содержимому папок (положил файл — он появился в выборе), подписи и порядок — из
+// необязательных manifest.json в этих папках. Имена файлов — латиница, цифры, «-», «_», «.»: так их
+// безопасно подставлять в URL и проверять на сервере.
+const BUNDLED_PRESETS_DIR = path.join(PUBLIC_DIR, 'avatars', 'presets');
+const PRESET_DIRS = [USER_PRESETS_DIR, BUNDLED_PRESETS_DIR]; // порядок = приоритет при одинаковом имени
 const PRESET_NAME_RE = /^[\w.-]+\.(svg|png|jpe?g|webp|gif)$/i;
 
-// Допустимая «готовая» картинка: URL вида /avatars/presets/имя.расширение и такой файл есть.
+// Допустимая «готовая» картинка: URL вида /avatars/presets/имя.расширение и такой файл есть в одной из папок.
 function isAvatarPresetUrl(url) {
   if (typeof url !== 'string') return false;
   const m = /^\/avatars\/presets\/([^/]+)$/.exec(url);
   if (!m || !PRESET_NAME_RE.test(m[1])) return false;
-  try {
-    return fs.statSync(path.join(PRESETS_DIR, m[1])).isFile();
-  } catch (err) {
-    return false;
-  }
+  return PRESET_DIRS.some((dir) => {
+    try {
+      return fs.statSync(path.join(dir, m[1])).isFile();
+    } catch (err) {
+      return false;
+    }
+  });
 }
 
-// Список для выбора: [{ id, url, label }]. Сначала в порядке manifest.json (если файл ещё
-// на месте), затем остальные по алфавиту; подпись — из манифеста или имя файла без расширения.
+// Список для выбора: [{ id, url, label }]. Сначала в порядке манифестов (свой — раньше поставляемого),
+// затем остальные по алфавиту; подпись — из манифеста или имя файла без расширения.
 function listAvatarPresets() {
-  let files = [];
-  try {
-    files = fs.readdirSync(PRESETS_DIR, { withFileTypes: true })
-      .filter((d) => d.isFile() && PRESET_NAME_RE.test(d.name))
-      .map((d) => d.name);
-  } catch (err) {
-    return [];
-  }
-  let manifest = [];
-  try {
-    const raw = JSON.parse(fs.readFileSync(path.join(PRESETS_DIR, 'manifest.json'), 'utf-8'));
-    if (Array.isArray(raw)) manifest = raw.filter((e) => e && typeof e.url === 'string');
-  } catch (err) { /* манифест необязателен */ }
-  const byUrl = new Map(manifest.map((e) => [e.url, e]));
+  const fileSet = new Set();
+  PRESET_DIRS.forEach((dir) => {
+    try {
+      fs.readdirSync(dir, { withFileTypes: true })
+        .filter((d) => d.isFile() && PRESET_NAME_RE.test(d.name))
+        .forEach((d) => fileSet.add(d.name));
+    } catch (err) { /* папки может не быть */ }
+  });
+  const files = [...fileSet];
+  const manifest = [];
+  PRESET_DIRS.forEach((dir) => {
+    try {
+      const raw = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf-8'));
+      if (Array.isArray(raw)) raw.filter((e) => e && typeof e.url === 'string').forEach((e) => manifest.push(e));
+    } catch (err) { /* манифест необязателен */ }
+  });
+  const byUrl = new Map();
+  manifest.forEach((e) => { if (!byUrl.has(e.url)) byUrl.set(e.url, e); }); // раньше встреченный (свой) главнее
   const toItem = (name) => {
     const url = `/avatars/presets/${name}`;
     const base = name.replace(/\.[^.]+$/, '');
@@ -664,9 +728,9 @@ function listAvatarPresets() {
     return { id: (e && e.id) || base, url, label: (e && e.label) || base.replace(/[-_]+/g, ' ') };
   };
   const present = new Set(files);
-  const ordered = manifest
+  const ordered = [...new Set(manifest
     .map((e) => e.url.replace('/avatars/presets/', ''))
-    .filter((name) => present.has(name));
+    .filter((name) => present.has(name)))];
   const rest = files.filter((name) => !ordered.includes(name)).sort((a, b) => a.localeCompare(b));
   return [...ordered, ...rest].map(toItem);
 }
@@ -1241,14 +1305,13 @@ function stopMusic() {
 }
 
 // ---- Саундборд/музыка: загрузка файлов -----------------------------------
-// ГМ может пополнять/чистить те же манифесты, из которых клиент (soundboard.js/
-// music.js) читает список звуков/треков (см. public/assets/sounds|music/manifest.json).
+// Список звуков/треков, который клиент (soundboard.js/music.js) читает по адресам
+// assets/sounds|music/manifest.json, собирает сервер (listAudio): поставляемые с движком записи
+// (public/assets/<вид>/manifest.json, только чтение) минус скрытые ГМ плюс добавленные ГМ.
+// Добавленное и скрытое — в data/audio-library.json, загруженные файлы — в data/uploads/<вид>/ (то есть
+// переживают пересборку Docker); index.js отдаёт манифест и файлы под прежними адресами.
 // Декодирование dataURL — тот же принцип, что у addMapImage, но для audio/*.
-const SOUNDS_DIR = path.join(__dirname, '..', 'public', 'assets', 'sounds');
-const SOUNDS_MANIFEST_FILE = path.join(SOUNDS_DIR, 'manifest.json');
-const MUSIC_DIR = path.join(__dirname, '..', 'public', 'assets', 'music');
-const MUSIC_MANIFEST_FILE = path.join(MUSIC_DIR, 'manifest.json');
-
+const AUDIO_KINDS = ['music', 'sounds'];
 const AUDIO_EXT_BY_MIME = { mpeg: 'mp3', wav: 'wav', 'x-wav': 'wav', ogg: 'ogg' };
 
 function readManifest(file) {
@@ -1260,11 +1323,49 @@ function readManifest(file) {
   }
 }
 
-function writeManifest(file, list) {
-  fs.writeFileSync(file, JSON.stringify(list, null, 2));
+function loadAudioLibrary() {
+  let raw = null;
+  for (const file of [AUDIO_LIBRARY_FILE, `${AUDIO_LIBRARY_FILE}.bak`]) {
+    if (!fs.existsSync(file)) continue;
+    try {
+      raw = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      if (raw && typeof raw === 'object') break;
+    } catch (err) {
+      console.error(`Не удалось прочитать ${path.basename(file)}:`, err.message);
+      raw = null;
+    }
+  }
+  const lib = {};
+  AUDIO_KINDS.forEach((kind) => {
+    const part = (raw && raw[kind]) || {};
+    lib[kind] = {
+      added: (Array.isArray(part.added) ? part.added : [])
+        .filter((e) => e && typeof e.id === 'string' && typeof e.file === 'string'),
+      removed: (Array.isArray(part.removed) ? part.removed : []).filter((s) => typeof s === 'string'),
+    };
+  });
+  return lib;
+}
+const audioLibrary = loadAudioLibrary();
+
+function saveAudioLibrary() {
+  try {
+    writeFileAtomic(AUDIO_LIBRARY_FILE, JSON.stringify(audioLibrary, null, 2));
+  } catch (err) {
+    console.warn('Не удалось сохранить audio-library.json:', err.message);
+  }
 }
 
-function addAudioEntry(dir, manifestFile, maxSize, name, dataUrl) {
+const bundledAudio = (kind) => readManifest(path.join(PUBLIC_DIR, 'assets', kind, 'manifest.json'));
+
+// Итоговый список для клиента (kind: 'music' | 'sounds').
+function listAudio(kind) {
+  const lib = audioLibrary[kind];
+  if (!lib) return [];
+  return [...bundledAudio(kind).filter((e) => !lib.removed.includes(e.id)), ...lib.added];
+}
+
+function addAudioEntry(kind, maxSize, name, dataUrl) {
   if (typeof dataUrl !== 'string') return null;
   const match = /^data:audio\/([a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
   if (!match) return null;
@@ -1272,47 +1373,55 @@ function addAudioEntry(dir, manifestFile, maxSize, name, dataUrl) {
   if (!ext) return null; // неподдерживаемый формат — принимаем только mp3/wav/ogg
   const buffer = Buffer.from(match[2], 'base64');
   if (buffer.length > maxSize) return null; // защита от гигантских файлов
+  const dir = AUDIO_UPLOAD_DIRS[kind];
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const fileName = `${id}.${ext}`;
   fs.writeFileSync(path.join(dir, fileName), buffer);
   const label = (typeof name === 'string' && name.trim() ? name.trim() : id).slice(0, config.AUDIO_LABEL_MAX_LENGTH);
   const entry = { id, label, file: fileName };
-  const list = readManifest(manifestFile);
-  list.push(entry);
-  writeManifest(manifestFile, list);
+  audioLibrary[kind].added.push(entry);
+  saveAudioLibrary();
   return entry;
 }
 
-function removeAudioEntry(dir, manifestFile, id) {
-  const list = readManifest(manifestFile);
-  const idx = list.findIndex((e) => e.id === id);
-  if (idx === -1) return false;
-  const [removed] = list.splice(idx, 1);
-  writeManifest(manifestFile, list);
-  if (removed && removed.file) {
-    const filePath = path.join(dir, path.basename(removed.file));
-    fs.unlink(filePath, (err) => {
-      if (err && err.code !== 'ENOENT') console.warn('Не удалось удалить аудиофайл:', err.message);
-    });
+// Добавленную ГМ запись удаляем вместе с файлом; поставляемую с движком — только скрываем
+// (файл лежит в образе и стереть его нельзя), скрытие хранится в audio-library.json.
+function removeAudioEntry(kind, id) {
+  const lib = audioLibrary[kind];
+  const idx = lib.added.findIndex((e) => e.id === id);
+  if (idx !== -1) {
+    const [removed] = lib.added.splice(idx, 1);
+    saveAudioLibrary();
+    if (removed.file) {
+      fs.unlink(path.join(AUDIO_UPLOAD_DIRS[kind], path.basename(removed.file)), (err) => {
+        if (err && err.code !== 'ENOENT') console.warn('Не удалось удалить аудиофайл:', err.message);
+      });
+    }
+    return true;
   }
-  return true;
+  if (!lib.removed.includes(id) && bundledAudio(kind).some((e) => e.id === id)) {
+    lib.removed.push(id);
+    saveAudioLibrary();
+    return true;
+  }
+  return false;
 }
 
 function addSound(name, dataUrl) {
-  return addAudioEntry(SOUNDS_DIR, SOUNDS_MANIFEST_FILE, config.SOUND_UPLOAD_MAX_SIZE, name, dataUrl);
+  return addAudioEntry('sounds', config.SOUND_UPLOAD_MAX_SIZE, name, dataUrl);
 }
 
 function removeSound(id) {
-  return removeAudioEntry(SOUNDS_DIR, SOUNDS_MANIFEST_FILE, id);
+  return removeAudioEntry('sounds', id);
 }
 
 function addMusicTrack(name, dataUrl) {
-  return addAudioEntry(MUSIC_DIR, MUSIC_MANIFEST_FILE, config.MUSIC_UPLOAD_MAX_SIZE, name, dataUrl);
+  return addAudioEntry('music', config.MUSIC_UPLOAD_MAX_SIZE, name, dataUrl);
 }
 
 function removeMusicTrack(id) {
-  const removed = removeAudioEntry(MUSIC_DIR, MUSIC_MANIFEST_FILE, id);
+  const removed = removeAudioEntry('music', id);
   if (removed && state.music.trackId === id) {
     stopMusic();
     return { removed: true, wasPlaying: true };
@@ -1324,8 +1433,7 @@ function removeMusicTrack(id) {
 // Мастер накладывает произвольные картинки (хендауты/доп. арт/собственный
 // фон карты — движок своего дефолтного фона не задаёт). Декодирование data
 // URL — тот же принцип, что и у аватаров (см. saveUploadedAvatar), но без
-// каталога UPLOADS_DIR персонажей — файлы кладём в отдельную папку map-images.
-const MAP_IMAGES_DIR = path.join(__dirname, '..', 'public', 'avatars', 'map-images');
+// каталога UPLOADS_DIR персонажей — файлы кладём в отдельную папку map-images (data/uploads/map-images).
 
 function findMapImage(id) {
   return state.mapImages.find((m) => m.id === id);
@@ -1493,9 +1601,12 @@ function removeMapImage(id) {
   if (idx === -1) return false;
   const [removed] = state.mapImages.splice(idx, 1);
   if (removed && removed.url) {
-    const filePath = path.join(MAP_IMAGES_DIR, path.basename(removed.url));
-    fs.unlink(filePath, (err) => {
-      if (err && err.code !== 'ENOENT') console.warn('Не удалось удалить файл картинки карты:', err.message);
+    // Файл лежит в data/uploads/map-images (старые — ещё в public/avatars/map-images, если не перенесены).
+    const name = path.basename(removed.url);
+    [MAP_IMAGES_DIR, path.join(PUBLIC_DIR, 'avatars', 'map-images')].forEach((dir) => {
+      fs.unlink(path.join(dir, name), (err) => {
+        if (err && err.code !== 'ENOENT') console.warn('Не удалось удалить файл картинки карты:', err.message);
+      });
     });
   }
   return true;
@@ -1913,6 +2024,15 @@ module.exports = {
   setNpcNameHidden,
   isAvatarPresetUrl,
   listAvatarPresets,
+  listAudio,
+  // каталоги в data/ (volume Docker), которые index.js отдаёт под прежними адресами
+  storagePaths: {
+    avatarUploads: UPLOADS_DIR,
+    mapImages: MAP_IMAGES_DIR,
+    presets: USER_PRESETS_DIR,
+    music: AUDIO_UPLOAD_DIRS.music,
+    sounds: AUDIO_UPLOAD_DIRS.sounds,
+  },
   publicCombatOrder,
   setNpcDead,
   setNpcFaction,

@@ -1,3 +1,7 @@
 node_modules
 public/dist
 .git
+server/data/uploads
+server/data/presets
+server/data/roster.json*
+server/data/audio-library.json*

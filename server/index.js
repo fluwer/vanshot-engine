@@ -13,13 +13,25 @@ const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 30 * 1024 * 1024 });
 
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
-// Список готовых картинок (аватары героев/NPC) строится по содержимому папки
-// public/avatars/presets — положил файл, и он появился в выборе; подписи и порядок — из
-// необязательного manifest.json рядом. Маршрут стоит ДО static, иначе отдался бы сам файл.
-app.get('/avatars/presets/manifest.json', (req, res) => {
-  res.set('Cache-Control', 'no-cache');
-  res.json(gameState.listAvatarPresets());
-});
+
+// Динамические списки (маршруты стоят ДО static, иначе отдался бы сам файл-манифест из образа):
+// готовые картинки героев/NPC — по содержимому папок presets (положил файл — он появился в выборе;
+// подписи и порядок — из необязательных manifest.json), музыка и звуки — поставляемые + добавленные ГМ.
+const noCache = (res) => res.set('Cache-Control', 'no-cache');
+app.get('/avatars/presets/manifest.json', (req, res) => { noCache(res); res.json(gameState.listAvatarPresets()); });
+app.get('/assets/music/manifest.json', (req, res) => { noCache(res); res.json(gameState.listAudio('music')); });
+app.get('/assets/sounds/manifest.json', (req, res) => { noCache(res); res.json(gameState.listAudio('sounds')); });
+
+// Всё, что пишет программа или подкладывает ГМ, лежит в data/ — это единственный каталог, вынесенный на
+// диск хоста в Docker (public/ и server/ запечены в образ и пересоздаются при сборке). Отдаём эти папки
+// под прежними адресами ПЕРЕД public: файл из data главнее одноимённого из образа (свою картинку можно
+// положить поверх поставляемой), а чего в data нет, найдётся в public. Нет папки — просто 404 дальше по цепочке.
+const store = gameState.storagePaths;
+app.use('/avatars/presets', express.static(store.presets));
+app.use('/avatars/uploads', express.static(store.avatarUploads));
+app.use('/avatars/map-images', express.static(store.mapImages));
+app.use('/assets/music', express.static(store.music));
+app.use('/assets/sounds', express.static(store.sounds));
 app.use(express.static(PUBLIC_DIR));
 
 // Текст подсказки для команды чата /help.

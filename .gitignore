@@ -7,3 +7,8 @@ Thumbs.db
 
 # Состав героев с заметками ГМ (правки поверх characters.json, см. server/gameState.js) — игровые данные
 server/data/roster.json*
+
+# Загруженные и подложенные файлы (картинки карты и аватары, музыка и звуки, свои готовые картинки героев) — игровые данные в data/
+server/data/uploads/
+server/data/presets/
+server/data/audio-library.json*
