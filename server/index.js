@@ -53,6 +53,27 @@ function closeImageProposal(proposal, status, extra = {}) {
 }
 
 io.on('connection', (socket) => {
+  // Любая ошибка внутри обработчика события (например, деструктуризация `({ a, b }) => …`
+  // от пустого payload — null/ничего) иначе не перехватывается Socket.IO и роняет весь процесс:
+  // игра встаёт у всех. Оборачиваем socket.on один раз — вместо правки каждого обработчика:
+  // ошибка пишется в лог, сервер живёт, а ждущий ack-колбэк получает отказ.
+  const rawOn = socket.on.bind(socket);
+  socket.on = (event, handler) => rawOn(event, (...args) => {
+    const fail = (err) => {
+      console.error(`[socket:${event}]`, err && err.message ? err.message : err);
+      const ack = args[args.length - 1];
+      if (typeof ack === 'function') {
+        try { ack({ ok: false, reason: 'server-error' }); } catch (e) { /* ack не обязателен */ }
+      }
+    };
+    try {
+      const result = handler(...args);
+      if (result && typeof result.catch === 'function') result.catch(fail); // async-обработчики
+    } catch (err) {
+      fail(err);
+    }
+  });
+
   socket.on('join', ({ role, name, characterId, code }, ack) => {
     // Код доступа защищает от входа под чужим персонажем — проверяем
     // до того, как что-либо менять в состоянии.
@@ -100,6 +121,17 @@ io.on('connection', (socket) => {
   socket.on('roll', ({ characterId, attribute, spendResolve, label }) => {
     gameState.rollDice(characterId, attribute, spendResolve, label);
     broadcastState();
+  });
+
+  // Кубик урона dN: ГМ бросает за любого персонажа/NPC (нет цели — от «Мастера»), игрок —
+  // только за своего (присланный characterId игнорируем), наблюдатель — нет. HP не меняется.
+  socket.on('roll:damage', (payload) => {
+    const { characterId, sides } = payload || {}; // null/мусор от клиента не должен ронять сервер
+    let rollerId;
+    if (socket.data.role === 'gm') rollerId = typeof characterId === 'string' ? characterId : null;
+    else if (socket.data.role === 'player' && socket.data.characterId) rollerId = socket.data.characterId;
+    else return;
+    if (gameState.rollDamage(rollerId, sides, 'Мастер')) broadcastState(); // sides — строго число из DAMAGE_DICE
   });
 
   socket.on('dicelog:clear', () => {
@@ -442,7 +474,11 @@ io.on('connection', (socket) => {
     // combat:started шлём раньше broadcastState — клиенты должны узнать
     // «бой начинается» и отложить показ итогового порядка хода до конца
     // анимации кубиков, а не увидеть его раньше, чем она доиграет.
-    if (combat.active && combat.order.length) io.emit('combat:started', { order: combat.order });
+    // Игрокам — с замаскированными именами скрытых NPC, ГМ — с настоящими.
+    if (combat.active && combat.order.length) {
+      io.to('players').emit('combat:started', { order: gameState.publicCombatOrder(combat.order) });
+      io.to('gm').emit('combat:started', { order: combat.order });
+    }
     broadcastState();
   });
 
@@ -607,6 +643,14 @@ io.on('connection', (socket) => {
   socket.on('npc:visible:set', ({ npcId, visible }) => {
     if (socket.data.role !== 'gm') return;
     gameState.setNpcVisible(npcId, visible);
+    broadcastState();
+  });
+
+  // Скрыть имя NPC от игроков (они видят «Неизвестный»): маска — в gameState.getPublicState.
+  socket.on('npc:namehidden:set', (payload) => {
+    if (socket.data.role !== 'gm') return;
+    const { npcId, hidden } = payload || {};
+    gameState.setNpcNameHidden(npcId, hidden);
     broadcastState();
   });
 

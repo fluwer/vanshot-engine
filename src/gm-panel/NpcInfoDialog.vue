@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue';
 import Modal from './Modal.vue';
 import Icon from './Icon.vue';
+import { vAutosize } from './autosize.js';
 
 const props = defineProps({
   npc: { type: Object, required: true },
@@ -98,11 +99,11 @@ function remove() {
     </div>
     <div class="form-field">
       <span class="form-field-label">Заметки</span>
-      <textarea rows="2" v-model="notes"></textarea>
+      <textarea rows="2" v-model="notes" v-autosize></textarea>
     </div>
     <div class="form-field">
       <span class="form-field-label">Секрет</span>
-      <textarea rows="2" v-model="secret"></textarea>
+      <textarea rows="2" v-model="secret" v-autosize></textarea>
     </div>
 
     <div class="form-actions">

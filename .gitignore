@@ -4,3 +4,6 @@ public/dist/
 # ОС/редакторы
 .DS_Store
 Thumbs.db
+
+# Состав героев с заметками ГМ (правки поверх characters.json, см. server/gameState.js) — игровые данные
+server/data/roster.json*

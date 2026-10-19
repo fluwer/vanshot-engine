@@ -90,7 +90,7 @@
     } else if (mode === 'blizzard') {
       for (let i = 0, n = Math.round(150 * A * I); i < n; i++) p.flakes.push(flake(0.2));
       for (let i = 0; i < 5; i++) {
-        p.blobs.push({ x: rand(0, w), y: rand(0.1 * h, 0.9 * h), r: rand(280, 560), speed: rand(25, 60), a: rand(0.05, 0.08) });
+        p.blobs.push({ x: rand(0, w), y: rand(0.1 * h, 0.9 * h), r: rand(260, 480), speed: rand(25, 60), a: rand(0.04, 0.06) });
       }
     }
     return p;
@@ -193,7 +193,7 @@
     p.blobs.forEach((b) => {
       b.x = wrap(b.x + b.speed * g * dt, w, b.r);
       const grad = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r);
-      grad.addColorStop(0, rgba(color.snow, b.a * Math.min(1.25, p.I))); // дымка не густеет выше «средне»+
+      grad.addColorStop(0, rgba(color.snow, b.a * Math.min(1.15, p.I))); // дымка не густеет выше «средне»+
       grad.addColorStop(1, rgba(color.snow, 0));
       ctx.fillStyle = grad;
       ctx.fillRect(b.x - b.r, b.y - b.r, b.r * 2, b.r * 2);
@@ -259,7 +259,7 @@
       vignette(w, h, Math.min(0.12, 0.07 * p.I));
     } else if (p.mode === 'blizzard') {
       drawBlobs(p, w, dt, g);
-      vignette(w, h, Math.min(0.22, 0.15 * p.I));
+      vignette(w, h, Math.min(0.2, 0.14 * p.I));
     }
     if (p.streaks.length) drawStreaks(p, w, h, dt, pdx, pdy, g);
     if (p.flakes.length) drawFlakes(p, w, h, dt, pdx, pdy, g);

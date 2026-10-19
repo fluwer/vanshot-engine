@@ -564,6 +564,11 @@ select.fog-btn { padding: 4px 28px 4px 8px; }
 /* ---- Кнопки бросков атрибутов (внутри .action-bar, см. выше) ---- */
 .attr-buttons { display: flex; gap: 6px; flex-wrap: wrap; }
 .resolve-toggle { font-size: 12px; color: var(--text-2); display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.npc-name-hidden-ico { margin-left: 6px; color: var(--amber); vertical-align: -0.15em; }
+/* Кубик урона d4…d12 (DamageDice.vue) — в нижней панели ГМ и игрока; на узком экране панель переносит строку. */
+.damage-dice { display: flex; align-items: center; gap: 4px; padding-left: 10px; border-left: 1px solid var(--line); }
+.damage-dice-label { font-size: 12px; color: var(--text-dim); display: inline-flex; align-items: center; gap: 4px; margin-right: 2px; }
+.damage-dice button { padding: 4px 7px; font-variant-numeric: tabular-nums; }
 
 /* ---- Модальные диалоги (добавление персонажа/NPC, инфо-карточки) ---- */
 .modal-backdrop {

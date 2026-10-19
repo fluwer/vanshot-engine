@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from 'vue';
 import Icon from './Icon.vue';
+import DamageDice from './DamageDice.vue';
 
 // Переиспользует тот же store, что и CharactersPanel (characters/npcs/selected) —
 // ту же выборку строит sidebar, не нужно тащить отдельную копию через bridge.
@@ -46,4 +47,6 @@ function roll(key) {
       @click="roll(key)"
     ><Icon :name="ATTRIBUTE_ICONS[key] || 'diamond'" /> {{ attrSign(value) }}{{ value }}</button>
   </div>
+  <!-- Кубик урона: за выбранную фишку, а без выбора — от «Мастера» -->
+  <DamageDice :bridge="bridge" :character-id="activeEntity ? activeEntity.id : null" />
 </template>

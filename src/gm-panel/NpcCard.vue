@@ -18,7 +18,7 @@ const props = defineProps({
 });
 const emit = defineEmits([
   'select', 'hp-delta', 'energy-delta', 'armor-delta', 'damage-apply',
-  'item-give', 'item-remove', 'visible-toggle', 'dead-toggle', 'faction-set', 'info', 'toggle-expand',
+  'item-give', 'item-remove', 'visible-toggle', 'dead-toggle', 'name-hidden-toggle', 'faction-set', 'info', 'toggle-expand',
   'location-set',
 ]);
 
@@ -51,17 +51,20 @@ function handleCardClick(e) {
     <div class="row" style="gap:6px">
       <img v-if="npc.avatar" class="gm-avatar" :src="npc.avatar" alt="">
       <span v-else class="gm-avatar gm-avatar-fallback" :style="{ background: avatarColor }">{{ npc.name[0] }}</span>
-      <h3 style="margin:0">{{ npc.name }} ({{ npc.role }})</h3>
+      <h3 style="margin:0">{{ npc.name }} ({{ npc.role }})<Icon v-if="npc.nameHidden" name="eye-off" class="npc-name-hidden-ico" data-tip="Имя скрыто: игроки видят «Неизвестный»" /></h3>
       <button class="small npc-info-toggle" title="Инфо-карточка" aria-label="Инфо-карточка" @click="emit('info')"><Icon name="info" /></button>
       <button class="small" title="Свернуть/развернуть" aria-label="Свернуть/развернуть" @click="emit('toggle-expand')"><Icon :name="expanded ? 'chevron-down' : 'chevron-right'" /></button>
     </div>
 
-    <div class="row gm-stat-row" style="gap:10px">
+    <div class="row gm-stat-row" style="gap:6px 10px; flex-wrap: wrap">
       <label class="npc-flag-toggle">
         <input type="checkbox" :checked="npc.visible" @change="emit('visible-toggle', $event.target.checked)"> Виден игрокам
       </label>
       <label class="npc-flag-toggle">
         <input type="checkbox" :checked="npc.dead" @change="emit('dead-toggle', $event.target.checked)"> <Icon name="skull" /> Убит
+      </label>
+      <label class="npc-flag-toggle" data-tip="Игроки видят «Неизвестный» вместо имени и роли (на карте, в порядке хода и журнале бросков)">
+        <input type="checkbox" :checked="npc.nameHidden" @change="emit('name-hidden-toggle', $event.target.checked)"> <Icon name="eye-off" /> Скрыть имя
       </label>
     </div>
 

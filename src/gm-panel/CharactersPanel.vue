@@ -111,6 +111,7 @@ function onAddNpc(data) {
         @armor-delta="(d) => emitNpc('npc:armor:update', n.id, { delta: d })"
         @visible-toggle="(visible) => emitNpc('npc:visible:set', n.id, { visible })"
         @dead-toggle="(dead) => emitNpc('npc:dead:set', n.id, { dead })"
+        @name-hidden-toggle="(hidden) => emitNpc('npc:namehidden:set', n.id, { hidden })"
         @faction-set="(faction) => emitNpc('npc:faction:set', n.id, { faction })"
         @location-set="(locationId) => emitNpc('npc:location:set', n.id, { locationId })"
         @item-give="(item) => emitNpc('npc:item:give', n.id, { item })"

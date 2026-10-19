@@ -1,4 +1,5 @@
-// Динамичные кубики: каждый бросок — отдельный d20, который влетает с края экрана,
+// Динамичные кубики: каждый бросок — отдельный кубик (d20; у кубика урона entry.type === 'damage' —
+// своя форма по entry.sides: d4…d12), который влетает с края экрана,
 // кувыркается, отскакивает и ложится в свою точку (у всех клиентов одинаковую —
 // её выбирает сервер и кладёт в запись лога, entry.throw); несколько кубиков от
 // разных игроков лежат одновременно. Обычный не-модульный скрипт, без сборки.
@@ -86,11 +87,27 @@
   }
 
   // ---- Вёрстка кубика ----
-  const DIE_SVG = '<svg class="dfx-die-svg" viewBox="0 0 100 100" aria-hidden="true">'
-    + '<polygon points="50,4 91,27 91,73 50,96 9,73 9,27" fill="var(--dfx-color)" fill-opacity=".92" stroke="rgba(255,255,255,.75)" stroke-width="3" stroke-linejoin="round"/>'
-    + '<polygon points="50,18 79,66 21,66" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="2.5" stroke-linejoin="round"/>'
-    + '<path d="M50 4V18M91 27L79 66M9 27L21 66M91 73L79 66M9 73L21 66M50 96L21 66M50 96L79 66" stroke="rgba(255,255,255,.35)" stroke-width="2" fill="none"/>'
-    + '</svg>';
+  // Форма кубика по числу граней (entry.sides; у броска d20 поля нет — тогда 20): силуэт цвета
+  // бросающего + тонкие грани. d20 — шестиугольник, кубики урона d4…d12 — свои формы.
+  const DIE_OUTLINE = 'fill="var(--dfx-color)" fill-opacity=".92" stroke="rgba(255,255,255,.75)" stroke-width="3" stroke-linejoin="round"';
+  const DIE_FACES = {
+    4: '<polygon points="50,6 95,88 5,88" ' + DIE_OUTLINE + '/>'
+      + '<path d="M50 6V66M5 88L50 66L95 88" stroke="rgba(255,255,255,.4)" stroke-width="2.5" fill="none" stroke-linejoin="round"/>',
+    6: '<rect x="10" y="10" width="80" height="80" rx="15" ' + DIE_OUTLINE + '/>'
+      + '<rect x="27" y="27" width="46" height="46" rx="8" fill="none" stroke="rgba(255,255,255,.4)" stroke-width="2.5"/>',
+    8: '<polygon points="50,4 94,50 50,96 6,50" ' + DIE_OUTLINE + '/>'
+      + '<path d="M6 50H94M50 4V96" stroke="rgba(255,255,255,.35)" stroke-width="2" fill="none"/>',
+    10: '<polygon points="50,4 93,42 50,96 7,42" ' + DIE_OUTLINE + '/>'
+      + '<path d="M7 42L50 58L93 42M50 58V96" stroke="rgba(255,255,255,.4)" stroke-width="2.5" fill="none" stroke-linejoin="round"/>',
+    12: '<polygon points="50,5 93,36 77,90 23,90 7,36" ' + DIE_OUTLINE + '/>'
+      + '<polygon points="50,28 73,45 64,72 36,72 27,45" fill="none" stroke="rgba(255,255,255,.45)" stroke-width="2.5" stroke-linejoin="round"/>',
+    20: '<polygon points="50,4 91,27 91,73 50,96 9,73 9,27" ' + DIE_OUTLINE + '/>'
+      + '<polygon points="50,18 79,66 21,66" fill="none" stroke="rgba(255,255,255,.55)" stroke-width="2.5" stroke-linejoin="round"/>'
+      + '<path d="M50 4V18M91 27L79 66M9 27L21 66M91 73L79 66M9 73L21 66M50 96L21 66M50 96L79 66" stroke="rgba(255,255,255,.35)" stroke-width="2" fill="none"/>',
+  };
+  const sidesOf = (entry) => (DIE_FACES[entry.sides] ? entry.sides : 20);
+  const dieSvg = (entry) => '<svg class="dfx-die-svg" data-sides="' + sidesOf(entry) + '" viewBox="0 0 100 100" aria-hidden="true">'
+    + DIE_FACES[sidesOf(entry)] + '</svg>';
 
   function buildItem(entry, size) {
     const item = document.createElement('div');
@@ -100,10 +117,10 @@
 
     const die = document.createElement('div');
     die.className = 'dfx-die';
-    die.innerHTML = DIE_SVG;
+    die.innerHTML = dieSvg(entry);
     const num = document.createElement('div');
     num.className = 'dfx-die-num';
-    num.textContent = String(1 + Math.floor(Math.random() * 20));
+    num.textContent = String(1 + Math.floor(Math.random() * sidesOf(entry)));
     die.appendChild(num);
 
     // Имя бросающего вводит ГМ/игрок — только textContent.
@@ -256,7 +273,7 @@
       rec.die.animate(tumble, { duration: FLY_MS, fill: 'forwards' });
       // Пока кубик летит — число мелькает, как у настоящего кубика.
       rec.intervals.push(setInterval(() => {
-        rec.num.textContent = String(1 + Math.floor(Math.random() * 20));
+        rec.num.textContent = String(1 + Math.floor(Math.random() * sidesOf(entry)));
       }, 70));
       rec.timers.push(setTimeout(() => land(rec, entry, tx, W), FLY_MS));
     };

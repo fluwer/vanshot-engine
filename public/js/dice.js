@@ -16,6 +16,11 @@ function attrLabel(attr) {
 function diceEntryParts(entry) {
   const parts = [{ text: entry.characterName }];
   if (entry.dead) parts.push({ icon: 'skull', cls: 'ico-dead' }); // бросок убитого — с меткой
+  // Кубик урона dN (entry.type === 'damage'): «Имя: [меч] Урон d6: 4» — без атрибута, DC и критов.
+  if (entry.type === 'damage') {
+    parts.push({ text: ': ' }, { icon: 'sword', cls: 'ico-fail' }, { text: ` Урон d${entry.sides}: ${entry.die}` });
+    return parts;
+  }
   parts.push({ text: ': ' }, { icon: 'd20' }, { text: ` ${entry.die}` });
   if (entry.attribute) {
     const sign = entry.attrValue >= 0 ? '+' : '';
@@ -36,6 +41,7 @@ function diceEntryParts(entry) {
 
 // Компактная строка под числом на кубике (diceFx.js): «12 [тело] +2 [✦] +1 · DC 14 [✓]».
 function diceChipParts(entry) {
+  if (entry.type === 'damage') return [{ icon: 'sword', cls: 'ico-fail' }, { text: ` Урон d${entry.sides}` }];
   const parts = [{ text: String(entry.die) }];
   if (entry.attribute) {
     const sign = entry.attrValue >= 0 ? '+' : '−';

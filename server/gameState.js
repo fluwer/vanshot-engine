@@ -18,6 +18,135 @@ const npcs = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'npcs.json'), 'utf-8
 const skillsCatalog = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'skills.json'), 'utf-8'));
 const avatarAssignments = JSON.parse(fs.readFileSync(AVATARS_FILE, 'utf-8'));
 
+// ---- Состав героев: правки ГМ поверх characters.json --------------------------
+// characters.json — авторский шаблон, его в игре не переписываем. Всё, что ГМ меняет у героев
+// по ходу игры (диалог «Инфо»: имя, титул, завязка, предыстория, заметки, навыки, атрибуты;
+// выдача/изъятие предметов; добавление и удаление героев), пишется в roster.json и накладывается
+// при старте: { edits: { id: { изменённые поля } }, added: [определения новых], removed: [id] }.
+// В edits — только поля, отличающиеся от characters.json: авторские правки шаблона для героев,
+// которых ГМ не трогал, продолжают подхватываться. Файл — игровые данные с заметками ГМ (в .gitignore).
+const ROSTER_FILE = path.join(DATA_DIR, 'roster.json');
+const ROSTER_FIELDS = ['name', 'title', 'hook', 'backstory', 'notes', 'skills', 'attributes', 'inventory'];
+const cloneJson = (v) => JSON.parse(JSON.stringify(v));
+const filterSkills = (list) => (Array.isArray(list) ? list.filter((s) => typeof s === 'string' && skillsCatalog[s]) : []);
+
+// Шаблон — каким герои пришли из characters.json (навыки уже по каталогу): с ним сравниваем при сохранении.
+const baseCharacters = cloneJson(characters).map((c) => ({ ...c, skills: filterSkills(c.skills), notes: typeof c.notes === 'string' ? c.notes : '' }));
+
+function loadRoster() {
+  for (const file of [ROSTER_FILE, `${ROSTER_FILE}.bak`]) {
+    if (!fs.existsSync(file)) continue;
+    try {
+      const raw = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      if (raw && typeof raw === 'object') {
+        return {
+          edits: raw.edits && typeof raw.edits === 'object' ? raw.edits : {},
+          added: Array.isArray(raw.added) ? raw.added : [],
+          removed: Array.isArray(raw.removed) ? raw.removed : [],
+        };
+      }
+    } catch (err) {
+      console.error(`Не удалось прочитать ${path.basename(file)}:`, err.message);
+    }
+  }
+  return { edits: {}, added: [], removed: [] };
+}
+
+// Новый герой из определения (roster.json → added): недостающее — умолчания, как у addCharacter.
+function characterFromDefinition(def) {
+  const max = (v, fallback) => (Number(v) > 0 ? Number(v) : fallback);
+  const hpMax = max(def.hp && def.hp.max, 10);
+  const resolveMax = max(def.resolve && def.resolve.max, 3);
+  const energyMax = max(def.energy && def.energy.max, 6);
+  const a = def.attributes || {};
+  return {
+    id: def.id,
+    name: String(def.name || def.id),
+    title: typeof def.title === 'string' ? def.title : '',
+    color: typeof def.color === 'string' ? def.color : '#888888',
+    attributes: { body: Number(a.body) || 0, mind: Number(a.mind) || 0, charisma: Number(a.charisma) || 0 },
+    hp: { current: hpMax, max: hpMax },
+    resolve: { current: resolveMax, max: resolveMax },
+    energy: { current: energyMax, max: energyMax },
+    skills: Array.isArray(def.skills) ? def.skills : [],
+    inventory: Array.isArray(def.inventory) ? def.inventory.filter((s) => typeof s === 'string') : [],
+    backstory: typeof def.backstory === 'string' ? def.backstory : '',
+    hook: typeof def.hook === 'string' ? def.hook : '',
+    notes: typeof def.notes === 'string' ? def.notes : '',
+  };
+}
+
+(function applyRoster() {
+  const roster = loadRoster();
+  for (let i = characters.length - 1; i >= 0; i--) {
+    if (roster.removed.includes(characters[i].id)) characters.splice(i, 1);
+  }
+  characters.forEach((c) => {
+    const edit = roster.edits[c.id];
+    if (!edit || typeof edit !== 'object') return;
+    ROSTER_FIELDS.forEach((f) => { if (f in edit) c[f] = cloneJson(edit[f]); });
+  });
+  roster.added.forEach((def) => {
+    if (def && typeof def.id === 'string' && !characters.some((c) => c.id === def.id)) characters.push(characterFromDefinition(def));
+  });
+  characters.forEach((c) => { c.skills = filterSkills(c.skills); }); // навыки, убранные из каталога, отпадают
+}());
+
+// Атомарная запись ценных данных: во временный файл, прежняя исправная версия — в .bak, затем переименование.
+function writeFileAtomic(file, data) {
+  const tmp = `${file}.tmp`;
+  fs.writeFileSync(tmp, data);
+  if (fs.existsSync(file)) {
+    try {
+      JSON.parse(fs.readFileSync(file, 'utf-8'));
+      fs.copyFileSync(file, `${file}.bak`);
+    } catch (err) { /* текущий файл битый — .bak не затираем */ }
+  }
+  fs.renameSync(tmp, file);
+}
+
+// Определение героя для roster.json (текущие HP/энергия/решимость — в runtime.json, тут только максимумы).
+function characterDefinition(c) {
+  return {
+    id: c.id,
+    name: c.name,
+    title: c.title,
+    color: c.color,
+    attributes: cloneJson(c.attributes),
+    hp: { current: c.hp.max, max: c.hp.max },
+    resolve: { current: c.resolve.max, max: c.resolve.max },
+    energy: { current: c.energy.max, max: c.energy.max },
+    skills: c.skills || [],
+    inventory: c.inventory || [],
+    backstory: c.backstory || '',
+    hook: c.hook || '',
+    notes: c.notes || '',
+  };
+}
+
+function saveRoster() {
+  try {
+    const baseById = new Map(baseCharacters.map((b) => [b.id, b]));
+    const edits = {};
+    const added = [];
+    characters.forEach((c) => {
+      const base = baseById.get(c.id);
+      if (!base) { added.push(characterDefinition(c)); return; }
+      const diff = {};
+      ROSTER_FIELDS.forEach((f) => {
+        const cur = f === 'notes' ? (c.notes || '') : c[f];
+        if (cur === undefined) return;
+        if (JSON.stringify(cur) !== JSON.stringify(base[f])) diff[f] = cloneJson(cur);
+      });
+      if (Object.keys(diff).length) edits[c.id] = diff;
+    });
+    const removed = baseCharacters.filter((b) => !characters.some((c) => c.id === b.id)).map((b) => b.id);
+    writeFileAtomic(ROSTER_FILE, JSON.stringify({ edits, added, removed }, null, 2));
+  } catch (err) {
+    console.warn('Не удалось сохранить roster.json:', err.message);
+  }
+}
+
 // Код доступа к персонажу — защищает от того, что любой игрок войдёт под
 // чужим героем и увидит/сломает его данные. Хранится отдельно от
 // characters.json (как avatars.json), генерируется один раз при первом
@@ -168,6 +297,7 @@ characters.forEach((c) => {
   c.code = characterCodes[c.id];
   c.armor = 0;
   c.dead = false;
+  c.notes = typeof c.notes === 'string' ? c.notes : ''; // заметки ГМ о персонаже: игрокам не уходят (getPublicState)
   c.position = map.defaultSpawn(getActiveLocation(), spawnOffset);
   c.locationPositions = {};
   spawnOffset += 1;
@@ -175,6 +305,7 @@ characters.forEach((c) => {
 
 // Восстанавливаем сохранённые ресурсы/позицию персонажей поверх дефолтного
 // спауна (см. persistRuntimeState) — только для тех, у кого есть снимок.
+let notesMigrated = false;
 if (initialRuntime && initialRuntime.characters) {
   characters.forEach((c) => {
     const saved = initialRuntime.characters[c.id];
@@ -184,10 +315,13 @@ if (initialRuntime && initialRuntime.characters) {
     if (saved.resolve != null) c.resolve.current = saved.resolve;
     if (typeof saved.armor === 'number') c.armor = saved.armor;
     if (typeof saved.dead === 'boolean') c.dead = saved.dead;
+    // Заметки раньше лежали в runtime.json (теперь — в roster.json): уже набранные подхватываем и переносим.
+    if (typeof saved.notes === 'string' && saved.notes && !c.notes) { c.notes = saved.notes; notesMigrated = true; }
     if (saved.position) c.position = saved.position;
     c.locationPositions = saved.locationPositions || {};
   });
 }
+if (notesMigrated) saveRoster();
 
 npcs.forEach((n) => {
   if (typeof n.armor !== 'number') n.armor = 0;
@@ -325,6 +459,19 @@ function setNpcVisible(npcId, visible) {
   const n = findNpc(npcId);
   if (!n) return;
   n.visible = !!visible;
+  try {
+    fs.writeFileSync(NPCS_FILE, JSON.stringify(npcs, null, 2));
+  } catch (err) {
+    console.warn('Не удалось сохранить npcs.json:', err.message);
+  }
+}
+
+// Скрытое имя: игроки видят вместо имени и роли config.NPC_HIDDEN_NAME (маска — в
+// getPublicState/publicCombat/publicDiceLog; настоящее имя остаётся в данных и у ГМ).
+function setNpcNameHidden(npcId, hidden) {
+  const n = findNpc(npcId);
+  if (!n) return;
+  n.nameHidden = !!hidden;
   try {
     fs.writeFileSync(NPCS_FILE, JSON.stringify(npcs, null, 2));
   } catch (err) {
@@ -543,6 +690,7 @@ function giveItem(characterId, item) {
   if (!trimmed) return;
   if (!Array.isArray(c.inventory)) c.inventory = [];
   c.inventory.push(trimmed);
+  saveRoster();
 }
 
 function removeItem(characterId, index) {
@@ -550,6 +698,7 @@ function removeItem(characterId, index) {
   if (!c || !Array.isArray(c.inventory)) return;
   if (index < 0 || index >= c.inventory.length) return;
   c.inventory.splice(index, 1);
+  saveRoster();
 }
 
 function giveNpcItem(npcId, item) {
@@ -585,9 +734,8 @@ function slugifyId(name, existingIds) {
   return id;
 }
 
-// Добавляет нового персонажа во время сессии (пилот Vue-панели «Участники»).
-// ВАЖНО: не персистится в characters.json — при перезапуске сервера
-// добавленный персонаж исчезнет (известное ограничение пилота, см. план).
+// Добавляет нового персонажа во время сессии (Vue-панель «Участники»). Определение пишется
+// в roster.json (saveRoster), characters.json не трогаем — персонаж переживает перезапуск сервера.
 function addCharacter(data) {
   const name = String(data?.name || '').trim();
   if (!name) return null;
@@ -615,6 +763,7 @@ function addCharacter(data) {
     inventory: [],
     backstory: '',
     hook: '',
+    notes: '',
     claimedBy: null,
     socketId: null,
     avatar: null,
@@ -626,15 +775,16 @@ function addCharacter(data) {
   };
   spawnOffset += 1;
   characters.push(character);
+  saveRoster();
   return character;
 }
 
-// Удаляет персонажа из текущей сессии безвозвратно (только из памяти —
-// characters.json не трогаем, см. addCharacter).
+// Удаляет персонажа безвозвратно из состава (roster.json); characters.json не трогаем.
 function removeCharacter(characterId) {
   const idx = characters.findIndex((c) => c.id === characterId);
   if (idx === -1) return;
   characters.splice(idx, 1);
+  saveRoster();
 }
 
 // Добавляет нового NPC — персистится в npcs.json сразу же (тот же принцип,
@@ -686,10 +836,10 @@ function removeNpc(npcId) {
   }
 }
 
-// Редактирование данных персонажа из диалога «Инфо» (имя/title/hook/backstory/
-// навыки/атрибуты). НЕ персистится в characters.json — тот же принцип, что и
-// addCharacter/removeCharacter. HP/энергия/решимость/броня/инвентарь/код/dead
-// сюда не входят — у них уже есть свои узкие хендлеры.
+// Редактирование данных персонажа из диалога «Инфо» (имя/титул/завязка/предыстория/заметки/
+// навыки/атрибуты) — сохраняется в roster.json (saveRoster), characters.json не трогаем.
+// HP/энергия/решимость/броня/код/dead сюда не входят — у них свои узкие хендлеры, а
+// инвентарь меняют giveItem/removeItem (они тоже пишут roster.json).
 function updateCharacter(characterId, data) {
   const character = findCharacter(characterId);
   if (!character) return;
@@ -697,6 +847,7 @@ function updateCharacter(characterId, data) {
   if (typeof data?.title === 'string') character.title = data.title.trim();
   if (typeof data?.hook === 'string') character.hook = data.hook.trim();
   if (typeof data?.backstory === 'string') character.backstory = data.backstory.trim();
+  if (typeof data?.notes === 'string') character.notes = data.notes.trim(); // только ГМ (getPublicState их не отдаёт)
   if (Array.isArray(data?.skills)) {
     character.skills = data.skills.filter((s) => typeof s === 'string' && skillsCatalog[s]);
   }
@@ -707,6 +858,7 @@ function updateCharacter(characterId, data) {
       charisma: Number(data.attributes.charisma) || 0,
     };
   }
+  saveRoster();
 }
 
 // Редактирование данных NPC из диалога «Инфо» (имя/роль/заметки/секрет/
@@ -836,12 +988,59 @@ function pickDiceThrow() {
 // DC берётся из текущего значения, заданного мастером (не с клиента).
 // spendResolve: если true и есть Решимость — списать 1 и добавить +2 к сумме.
 // label: имя для лога, когда бросок не привязан к персонажу (свободный бросок мастера).
-function rollDice(characterId, attribute, spendResolve, label) {
+// Кто бросает: персонаж, NPC или мастер (id нет в справочниках) — общие поля записи лога
+// для rollDice и rollDamage. NPC не имеют Решимости, но имеют те же атрибуты — id
+// персонажей и NPC не пересекаются, поэтому безопасно проверить оба справочника по одному id.
+function describeRoller(characterId, label) {
   const c = findCharacter(characterId);
-  // NPC не имеют Решимости, но имеют те же атрибуты — id персонажей и NPC
-  // не пересекаются, поэтому безопасно проверить оба справочника по одному id.
   const n = !c ? findNpc(characterId) : null;
   const entity = c || n;
+  return {
+    c,
+    n,
+    entity,
+    fields: {
+      characterId,
+      characterName: entity ? entity.name : (label || 'Мастер'),
+      dead: !!(entity && entity.dead), // бросает убитый — клиент помечает имя ☠
+      // Кто бросает и каким цветом рисовать его кубик (у скрытого NPC нет записи
+      // в публичном state — клиенту проще получить цвет прямо из записи лога).
+      kind: c ? 'character' : n ? 'npc' : 'gm',
+      color: c ? (c.color || '#888888') : n ? config.DICE_COLOR_NPC : config.DICE_COLOR_GM,
+    },
+  };
+}
+
+function pushDiceLog(entry) {
+  state.diceLog.unshift(entry);
+  state.diceLog = state.diceLog.slice(0, 30);
+  return entry;
+}
+
+// Кубик урона dN (N из config.DAMAGE_DICE): просто показывается всем кубиком на экране и
+// записью лога, HP не меняет — урон применяет ГМ на карточке цели (applyDamage, броня учтена).
+function rollDamage(characterId, sides, label) {
+  if (!config.DAMAGE_DICE.includes(sides)) return null;
+  const { fields } = describeRoller(characterId, label);
+  const die = Math.floor(Math.random() * sides) + 1;
+  return pushDiceLog({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    ...fields,
+    throw: pickDiceThrow(),
+    type: 'damage',
+    sides,
+    attribute: null,
+    die,
+    total: die,
+    dc: null,
+    success: null,
+    critical: null,
+    time: new Date().toISOString(),
+  });
+}
+
+function rollDice(characterId, attribute, spendResolve, label) {
+  const { c, entity, fields } = describeRoller(characterId, label);
   const attrValue = entity && entity.attributes && entity.attributes[attribute] !== undefined ? entity.attributes[attribute] : 0;
   const die = Math.floor(Math.random() * 20) + 1;
 
@@ -855,13 +1054,7 @@ function rollDice(characterId, attribute, spendResolve, label) {
   const total = die + attrValue + resolveBonus;
   const entry = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    characterId,
-    characterName: entity ? entity.name : (label || 'Мастер'),
-    dead: !!(entity && entity.dead), // бросает убитый — клиент помечает имя ☠
-    // Кто бросает и каким цветом рисовать его кубик (у скрытого NPC нет записи
-    // в публичном state — клиенту проще получить цвет прямо из записи лога).
-    kind: c ? 'character' : n ? 'npc' : 'gm',
-    color: c ? (c.color || '#888888') : n ? config.DICE_COLOR_NPC : config.DICE_COLOR_GM,
+    ...fields,
     throw: pickDiceThrow(),
     attribute,
     die,
@@ -873,9 +1066,7 @@ function rollDice(characterId, attribute, spendResolve, label) {
     critical: die === 20 ? 'success' : die === 1 ? 'fail' : null,
     time: new Date().toISOString(),
   };
-  state.diceLog.unshift(entry);
-  state.diceLog = state.diceLog.slice(0, 30);
-  return entry;
+  return pushDiceLog(entry);
 }
 
 function clearDiceLog() {
@@ -1566,14 +1757,45 @@ function persistRuntimeState() {
   }
 }
 
+// ---- Скрытое имя NPC: маска для игроков ------------------------------------
+// Настоящее имя остаётся в данных (и у ГМ); игрокам вместо него — config.NPC_HIDDEN_NAME.
+// Маска накладывается при выдаче, поэтому снятие галочки сразу возвращает имя везде, в том
+// числе в старых записях журнала бросков и в порядке хода.
+function isNpcNameHidden(id) {
+  const n = findNpc(id);
+  return !!(n && n.nameHidden);
+}
+
+// NPC для игрока: без заметок ГМ, а у скрытого — без имени и роли (поле nameHidden не отдаём).
+function publicNpc({ notes, secret, nameHidden, ...rest }) {
+  return nameHidden ? { ...rest, name: config.NPC_HIDDEN_NAME, role: '' } : rest;
+}
+
+// Порядок хода (state.combat.order или payload combat:started) с замаскированными именами NPC.
+function publicCombatOrder(order) {
+  if (!Array.isArray(order)) return order;
+  return order.map((e) => (e.type === 'npc' && isNpcNameHidden(e.id) ? { ...e, name: config.NPC_HIDDEN_NAME } : e));
+}
+
+function publicCombat() {
+  return { ...state.combat, order: publicCombatOrder(state.combat.order) };
+}
+
+// Журнал бросков: записи скрытого NPC подписаны маской.
+function publicDiceLog() {
+  return state.diceLog.map((e) => (e.kind === 'npc' && isNpcNameHidden(e.characterId)
+    ? { ...e, characterName: config.NPC_HIDDEN_NAME }
+    : e));
+}
+
 function getPublicState() {
   const activeId = state.activeLocationId;
   return {
     currentDc: state.currentDc,
     // Код доступа — секрет между ГМ и игроком, игрокам (в т.ч. чужим) видны
-    // только остальные поля персонажа.
-    characters: characters.map(({ code, ...rest }) => rest),
-    diceLog: state.diceLog,
+    // только остальные поля персонажа; notes — заметки ГМ о персонаже, тоже только ГМ.
+    characters: characters.map(({ code, notes, ...rest }) => rest),
+    diceLog: publicDiceLog(),
     map: getActiveLocationLayout(),
     activeLocationId: activeId,
     // Имя активной локации — игроку нужно для строки «Текущая локация» (списка
@@ -1581,7 +1803,7 @@ function getPublicState() {
     activeLocationName: (findLocation(activeId) || locations[0]).name,
     skillsCatalog,
     chat: state.chat,
-    combat: state.combat,
+    combat: publicCombat(),
     // Картинки/рисунки — только активной локации (то же множество, что уже
     // рисуется на канвасе).
     mapImages: state.mapImages.filter((m) => m.locationId === activeId),
@@ -1597,13 +1819,16 @@ function getPublicState() {
     // аналогии с characters.code, хотя должны были.
     npcs: npcs
       .filter((n) => n.visible && n.position && n.locationId === activeId)
-      .map(({ notes, secret, ...rest }) => rest),
+      .map(publicNpc),
   };
 }
 
 function getGMState() {
   return {
     ...getPublicState(),
+    // ГМ видит настоящие имена в порядке хода и журнале бросков (публичные версии замаскированы).
+    combat: state.combat,
+    diceLog: state.diceLog,
     characters,
     // ВСЕ NPC всех локаций (нефильтрованные) — панель «Персонажи» нужна ГМ
     // для подготовки локаций заранее, до переключения на них.
@@ -1628,6 +1853,8 @@ module.exports = {
   setCharacterDead,
   isCharacterDead,
   setNpcVisible,
+  setNpcNameHidden,
+  publicCombatOrder,
   setNpcDead,
   setNpcFaction,
   setNpcLocation,
@@ -1659,6 +1886,7 @@ module.exports = {
   forceMoveNpc,
   getReachableCells,
   rollDice,
+  rollDamage,
   clearDiceLog,
   parseDiceExpression,
   formatFreeRoll,

@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue';
 import Modal from './Modal.vue';
 import Icon from './Icon.vue';
+import { vAutosize } from './autosize.js';
 
 const props = defineProps({
   character: { type: Object, required: true },
@@ -13,6 +14,7 @@ const name = ref('');
 const title = ref('');
 const hook = ref('');
 const backstory = ref('');
+const notes = ref(''); // заметки ГМ о персонаже — игрокам не уходят (getPublicState)
 const body = ref(0);
 const mind = ref(0);
 const charisma = ref(0);
@@ -28,6 +30,7 @@ watch(
     title.value = c.title || '';
     hook.value = c.hook || '';
     backstory.value = c.backstory || '';
+    notes.value = c.notes || '';
     body.value = c.attributes?.body ?? 0;
     mind.value = c.attributes?.mind ?? 0;
     charisma.value = c.attributes?.charisma ?? 0;
@@ -48,6 +51,7 @@ function save() {
     title: title.value.trim(),
     hook: hook.value.trim(),
     backstory: backstory.value.trim(),
+    notes: notes.value.trim(),
     attributes: { body: Number(body.value) || 0, mind: Number(mind.value) || 0, charisma: Number(charisma.value) || 0 },
     skills: skills.value,
   });
@@ -98,11 +102,15 @@ function remove() {
     </div>
     <div class="form-field">
       <span class="form-field-label">Завязка</span>
-      <textarea rows="2" v-model="hook"></textarea>
+      <textarea rows="2" v-model="hook" v-autosize></textarea>
     </div>
     <div class="form-field">
       <span class="form-field-label">Предыстория</span>
-      <textarea rows="3" v-model="backstory"></textarea>
+      <textarea rows="3" v-model="backstory" v-autosize></textarea>
+    </div>
+    <div class="form-field">
+      <span class="form-field-label">Заметки <span class="muted small">— видит только ГМ</span></span>
+      <textarea rows="3" v-model="notes" placeholder="Что известно мастеру о персонаже, планы, секреты…" v-autosize></textarea>
     </div>
 
     <div class="form-field">

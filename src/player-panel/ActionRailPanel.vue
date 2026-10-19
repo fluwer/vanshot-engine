@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue';
 import Icon from '../gm-panel/Icon.vue';
+import DamageDice from '../gm-panel/DamageDice.vue';
 
 const props = defineProps({
   store: { type: Object, required: true },
@@ -33,4 +34,5 @@ function roll(key) {
     <button v-for="(value, key) in character?.attributes" :key="key" @click="roll(key)">{{ label(key, value) }}</button>
   </div>
   <label class="resolve-toggle"><input type="checkbox" v-model="spendResolve"> −1 Решимость <Icon name="arrow-right" /> +2</label>
+  <DamageDice :bridge="bridge" :character-id="character ? character.id : null" />
 </template>
