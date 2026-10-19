@@ -108,7 +108,7 @@ function remove() {
     <div class="form-field">
       <span class="form-field-label">Навыки</span>
       <div class="skills-grid">
-        <label v-for="(info, skillName) in skillsCatalog" :key="skillName" class="skill-toggle">
+        <label v-for="(info, skillName) in skillsCatalog" :key="skillName" class="skill-toggle" :data-tip="info.description || null">
           <input type="checkbox" :checked="skills.includes(skillName)" @change="toggleSkill(skillName)">
           <Icon :name="info.icon" /> {{ skillName }}
         </label>

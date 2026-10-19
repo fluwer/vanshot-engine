@@ -1718,6 +1718,8 @@ function createMapController({ canvas, role, myCharacterId }) {
         ctx.save();
         ctx.translate(m.x, m.y);
         ctx.rotate(angle);
+        // Отражение — в системе координат самой картинки (после поворота): рамка и ручки не меняются.
+        if (m.flipX || m.flipY) ctx.scale(m.flipX ? -1 : 1, m.flipY ? -1 : 1);
         ctx.drawImage(img, -w / 2, -h / 2, w, h);
         ctx.restore();
       });

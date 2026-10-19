@@ -2,6 +2,7 @@
 import { computed, watch } from 'vue';
 import { useDock } from '../gm-panel/useDock.js';
 import Icon from '../gm-panel/Icon.vue';
+import ImageLayerTools from '../gm-panel/ImageLayerTools.vue';
 
 // Блок «Картинки» игрока: свои картинки на карте (те, что ГМ принял после Ctrl+V).
 // Владелец сам двигает/масштабирует/вращает их, пока ГМ не заблокировал 🔒, и может
@@ -17,6 +18,7 @@ const props = defineProps({
 const MAX_IMAGES = 3;
 
 const mine = computed(() => props.store.images.filter((m) => m.ownerId === props.store.myCharacterId));
+const selectedImage = computed(() => mine.value.find((m) => m.id === props.store.selectedId) || null);
 
 // Режим правки = блок «Картинки» открыт (пункт 'images' левой панели) И есть что
 // править. Закрыли блок (повторный клик, ✕, Esc) — режим выключается сам, и тап по
@@ -80,6 +82,7 @@ function remove(m) {
           Здесь пока нет ваших картинок. Вставьте картинку через Ctrl+V — ГМ должен её принять.
         </p>
       </div>
+      <ImageLayerTools v-if="selectedImage" :image="selectedImage" :stack="store.images" :bridge="bridge" />
       <p class="muted small">Лимит: {{ MAX_IMAGES }} картинки на игрока. <Icon name="lock" /> — ГМ заблокировал правку.</p>
     </div>
   </div>

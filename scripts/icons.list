@@ -68,6 +68,13 @@ sword
 crosshair
 upload
 
+# --- слои и положение картинок на карте
+bring-to-front
+send-to-back
+rotate-cw
+flip-horizontal-2
+flip-vertical-2
+
 # --- спецэффекты
 wind
 flame

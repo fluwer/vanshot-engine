@@ -1117,8 +1117,37 @@ function updateMapImage(id, patch) {
   if (Number.isFinite(patch.y)) m.y = patch.y;
   if (Number.isFinite(patch.scale) && patch.scale > 0) m.scale = clamp(patch.scale, 0.05, 10);
   if (Number.isFinite(patch.rotation)) m.rotation = patch.rotation;
+  if (typeof patch.flipX === 'boolean') m.flipX = patch.flipX;
+  if (typeof patch.flipY === 'boolean') m.flipY = patch.flipY;
   if (typeof patch.locked === 'boolean') m.locked = patch.locked;
   return m;
+}
+
+// Порядок слоёв = порядок картинок в state.mapImages (первая — самая нижняя, рисуется
+// первой; под клик попадает последняя). op: 'front'/'back' — в конец/начало массива,
+// 'up'/'down' — меняет местами с ближайшей картинкой ТОЙ ЖЕ локации (картинки других
+// локаций между ними не в счёт). Возвращает true, если порядок изменился.
+const MAP_IMAGE_REORDER_OPS = ['front', 'up', 'down', 'back'];
+function reorderMapImage(id, op) {
+  if (!MAP_IMAGE_REORDER_OPS.includes(op)) return false;
+  const list = state.mapImages;
+  const from = list.findIndex((m) => m.id === id);
+  if (from === -1) return false;
+  const item = list[from];
+  if (op === 'front' || op === 'back') {
+    const sameLocation = list.filter((m) => m.locationId === item.locationId);
+    const edge = op === 'front' ? sameLocation[sameLocation.length - 1] : sameLocation[0];
+    if (edge === item) return false; // уже на краю
+    list.splice(from, 1);
+    if (op === 'front') list.push(item); else list.unshift(item);
+    return true;
+  }
+  const step = op === 'up' ? 1 : -1;
+  let to = from + step;
+  while (to >= 0 && to < list.length && list[to].locationId !== item.locationId) to += step;
+  if (to < 0 || to >= list.length) return false; // выше/ниже некуда
+  [list[from], list[to]] = [list[to], list[from]];
+  return true;
 }
 
 // Окрестность «домашней области» локации (gridWidth×gridHeight клеток + запас):
@@ -1162,7 +1191,19 @@ function updateOwnedMapImage(id, characterId, patch) {
     m.y = pos.y;
   }
   if (Number.isFinite(p.rotation)) m.rotation = p.rotation;
+  if (typeof p.flipX === 'boolean') m.flipX = p.flipX;
+  if (typeof p.flipY === 'boolean') m.flipY = p.flipY;
   return { ok: true, entry: m };
+}
+
+// Игрок меняет слой СВОЕЙ картинки (среди всех картинок активной локации): те же
+// условия, что у правки — своя, не заблокирована ГМ, активная локация.
+function reorderOwnedMapImage(id, characterId, op) {
+  const check = checkOwnedMapImage(id, characterId);
+  if (!check.ok) return check;
+  if (!MAP_IMAGE_REORDER_OPS.includes(op)) return { ok: false, reason: 'invalid' };
+  reorderMapImage(id, op);
+  return { ok: true, entry: check.entry };
 }
 
 function removeOwnedMapImage(id, characterId) {
@@ -1603,8 +1644,10 @@ module.exports = {
   removeMusicTrack,
   addMapImage,
   updateMapImage,
+  reorderMapImage,
   removeMapImage,
   updateOwnedMapImage,
+  reorderOwnedMapImage,
   removeOwnedMapImage,
   pruneImageProposals,
   proposeMapImage,

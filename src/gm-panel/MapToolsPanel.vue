@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import Modal from './Modal.vue';
 import { useDock } from './useDock.js';
 import Icon from './Icon.vue';
+import ImageLayerTools from './ImageLayerTools.vue';
 
 const props = defineProps({
   store: { type: Object, required: true },
@@ -57,6 +58,8 @@ function revealAllFog() {
 // ---- Картинки на карте ----
 const selectedMapImageId = ref(null);
 const selectedMapImage = computed(() => props.store.mapImages.find((m) => m.id === selectedMapImageId.value));
+// Список — как панель слоёв: сверху самый верхний (на карте это последняя картинка массива).
+const mapImagesTopFirst = computed(() => props.store.mapImages.slice().reverse());
 
 function imageLabel(m) {
   // name — исходное имя файла (см. onFileChange); у картинок, загруженных
@@ -305,9 +308,10 @@ function removeLocation(locationId) {
         <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden @change="onFileChange">
       </label>
       <p class="muted small">Ctrl+V — вставить картинку из буфера (скриншот или «Копировать изображение»). Игроки тоже могут вставлять — вы увидите запрос на согласование.</p>
+      <p class="muted small">В списке сверху — верхний слой: то, что лежит выше остальных на карте.</p>
       <div class="map-images-list">
         <div
-          v-for="m in store.mapImages"
+          v-for="m in mapImagesTopFirst"
           :key="m.id"
           class="map-image-row"
           :class="{ selected: m.id === selectedMapImageId }"
@@ -316,6 +320,7 @@ function removeLocation(locationId) {
         <p v-if="!store.mapImages.length" class="muted small">Пока нет картинок</p>
       </div>
       <div class="map-image-controls" v-show="selectedMapImage">
+        <ImageLayerTools gm :image="selectedMapImage" :stack="store.mapImages" :bridge="bridge" />
         <label class="npc-flag-toggle" title="Заблокировать позицию (запретить перемещение). У картинки игрока блокировка запрещает правку и удаление и владельцу."><input type="checkbox" :checked="selectedMapImage?.locked" @change="onLockChange"> <Icon name="lock" /> Заблокировать</label>
         <button class="small danger wide" @click="removeImage"><Icon name="trash-2" /> Удалить картинку</button>
       </div>

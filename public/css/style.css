@@ -356,6 +356,12 @@ select.fog-btn { padding: 4px 28px 4px 8px; }
 .map-image-row.selected { background: var(--accent-bg); border-color: var(--accent-line); color: var(--text); }
 .map-image-controls { display: flex; flex-direction: column; gap: 6px; }
 
+/* ---- Слой и положение картинки (src/gm-panel/ImageLayerTools.vue, общий для ГМ и игрока) ---- */
+.image-tools { display: flex; flex-direction: column; gap: 4px; }
+.image-tools-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.image-tools-row-3 { grid-template-columns: repeat(3, 1fr); }
+.image-tools-row button { padding: 5px 4px; }
+
 /* ---- Список локаций (переиспользует .map-image-row, но флексовый: имя тянется,
    кнопки переименования/удаления прижаты к правому краю строки) ---- */
 .location-row { display: flex; align-items: center; gap: 4px; }
@@ -518,6 +524,15 @@ select.fog-btn { padding: 4px 28px 4px 8px; }
 .toast-error { border-color: var(--danger); }
 .toast-out { opacity: 0; }
 @keyframes toastIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
+/* ---- Подсказка data-tip (public/js/tooltip.js): один элемент в body, выше модалок (50) и тостов (60) ---- */
+.tip {
+  position: fixed; left: 0; top: 0; z-index: 70; max-width: 300px; padding: 7px 10px;
+  border-radius: var(--r-md); font-size: 12px; line-height: 1.4; font-weight: 400; color: var(--text-2);
+  background: var(--surface-pop); border: 1px solid var(--line-strong); box-shadow: var(--shadow-2);
+  pointer-events: none; visibility: hidden; opacity: 0; transition: opacity 80ms ease;
+}
+.tip.tip-visible { visibility: visible; opacity: 1; }
 
 /* ---- Игроки предлагают картинки (src/gm-panel/ImageProposals.vue) ----
    Плавающая НЕ блокирующая карточка поверх панелей ГМ, ниже модалок. */

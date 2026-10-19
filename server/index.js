@@ -175,9 +175,9 @@ io.on('connection', (socket) => {
   // клиент остался бы с оптимистично сдвинутой картинкой).
   socket.on('mapimage:update', (payload, ack) => {
     const reply = (res) => { if (typeof ack === 'function') ack(res); };
-    const { id, x, y, scale, rotation, locked } = payload || {};
+    const { id, x, y, scale, rotation, locked, flipX, flipY } = payload || {};
     if (socket.data.role === 'gm') {
-      gameState.updateMapImage(id, { x, y, scale, rotation, locked });
+      gameState.updateMapImage(id, { x, y, scale, rotation, locked, flipX, flipY });
       reply({ ok: true });
       return broadcastState();
     }
@@ -188,7 +188,34 @@ io.on('connection', (socket) => {
         return reply({ ok: false, reason: 'rate-limit' });
       }
       socket.data.lastImageUpdateAt = now;
-      const result = gameState.updateOwnedMapImage(id, socket.data.characterId, { x, y, scale, rotation });
+      const result = gameState.updateOwnedMapImage(id, socket.data.characterId, { x, y, scale, rotation, flipX, flipY });
+      if (!result.ok) {
+        socket.emit('state', gameState.getPublicState());
+        return reply({ ok: false, reason: result.reason });
+      }
+      reply({ ok: true });
+      return broadcastState();
+    }
+    return reply({ ok: false, reason: 'forbidden' });
+  });
+
+  // Порядок слоёв картинки: { id, op: 'front' | 'up' | 'down' | 'back' }. ГМ — любой
+  // картинки; игрок — только своей (те же условия и троттлинг, что у mapimage:update).
+  socket.on('mapimage:reorder', (payload, ack) => {
+    const reply = (res) => { if (typeof ack === 'function') ack(res); };
+    const { id, op } = payload || {};
+    if (socket.data.role === 'gm') {
+      const changed = gameState.reorderMapImage(id, op);
+      reply({ ok: true, changed });
+      return changed ? broadcastState() : undefined;
+    }
+    if (socket.data.role === 'player' && socket.data.characterId) {
+      const now = Date.now();
+      if (now - (socket.data.lastImageUpdateAt || 0) < config.IMAGE_UPDATE_MIN_INTERVAL_MS) {
+        return reply({ ok: false, reason: 'rate-limit' });
+      }
+      socket.data.lastImageUpdateAt = now;
+      const result = gameState.reorderOwnedMapImage(id, socket.data.characterId, op);
       if (!result.ok) {
         socket.emit('state', gameState.getPublicState());
         return reply({ ok: false, reason: result.reason });
