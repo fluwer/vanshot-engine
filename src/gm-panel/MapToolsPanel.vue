@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import Modal from './Modal.vue';
 import { useDock } from './useDock.js';
+import Icon from './Icon.vue';
 
 const props = defineProps({
   store: { type: Object, required: true },
@@ -60,9 +61,9 @@ function imageLabel(m) {
   // name — исходное имя файла (см. onFileChange); у картинок, загруженных
   // до появления этого поля, его нет — оставляем старый фолбэк по времени.
   const label = m.name || `Картинка ${new Date(Number(m.id.split('-')[0])).toLocaleTimeString()}`;
-  // Картинки, принятые от игроков, — с именем владельца (👤): он правит их сам, пока не 🔒.
-  const owner = m.ownerName ? `👤 ${m.ownerName}: ` : '';
-  return `${m.locked ? '🔒 ' : ''}${owner}${label}`;
+  // Картинки, принятые от игроков, — с именем владельца: он правит их сам, пока не заблокировано.
+  // Значки замка и владельца рисует шаблон (иконки), здесь только текст.
+  return `${m.ownerName ? `${m.ownerName}: ` : ''}${label}`;
 }
 
 function selectImage(id) {
@@ -276,8 +277,8 @@ function removeLocation(locationId) {
       <p class="muted small fog-hint">Закрашивайте карту — игроки видят закрашенное чёрным. Пока блок открыт, фишки не выбираются.</p>
       <div class="fog-group">
         <div class="row" style="gap:4px">
-          <button class="fog-btn fog-tool" :class="{ active: fogTool === 'brush' }" title="Кисть" @click="setFogTool('brush')">🖌️</button>
-          <button class="fog-btn fog-tool" :class="{ active: fogTool === 'zone' }" title="Зона" @click="setFogTool('zone')">▭</button>
+          <button class="fog-btn fog-tool" :class="{ active: fogTool === 'brush' }" title="Кисть" @click="setFogTool('brush')"><Icon name="brush" /> Кисть</button>
+          <button class="fog-btn fog-tool" :class="{ active: fogTool === 'zone' }" title="Зона" @click="setFogTool('zone')"><Icon name="square-dashed" /> Зона</button>
         </div>
       </div>
       <div class="fog-group">
@@ -298,7 +299,10 @@ function removeLocation(locationId) {
     </div>
     <div class="tab-pane tab-pane-flex" :class="{ active: activeTab === 'tab-images' }">
       <p class="muted small fog-hint">Тяните картинку по карте, за угловые точки — размер, за верхнюю ручку — поворот. Пока блок открыт, фишки не выбираются.</p>
-      <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" @change="onFileChange">
+      <label class="upload-label">
+        <Icon name="upload" /> Загрузить картинку
+        <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden @change="onFileChange">
+      </label>
       <p class="muted small">Ctrl+V — вставить картинку из буфера (скриншот или «Копировать изображение»). Игроки тоже могут вставлять — вы увидите запрос на согласование.</p>
       <div class="map-images-list">
         <div
@@ -307,28 +311,28 @@ function removeLocation(locationId) {
           class="map-image-row"
           :class="{ selected: m.id === selectedMapImageId }"
           @click="selectImage(m.id)"
-        ><span>{{ imageLabel(m) }}</span></div>
+        ><span><Icon v-if="m.locked" name="lock" /> <Icon v-if="m.ownerName" name="user" /> {{ imageLabel(m) }}</span></div>
         <p v-if="!store.mapImages.length" class="muted small">Пока нет картинок</p>
       </div>
       <div class="map-image-controls" v-show="selectedMapImage">
-        <label class="npc-flag-toggle"><input type="checkbox" :checked="selectedMapImage?.locked" @change="onLockChange"> <span title="Заблокировать позицию (запретить перемещение). У картинки игрока блокировка запрещает правку и удаление и владельцу.">🔒</span></label>
-        <button class="small danger wide" @click="removeImage">Удалить картинку</button>
+        <label class="npc-flag-toggle" title="Заблокировать позицию (запретить перемещение). У картинки игрока блокировка запрещает правку и удаление и владельцу."><input type="checkbox" :checked="selectedMapImage?.locked" @change="onLockChange"> <Icon name="lock" /> Заблокировать</label>
+        <button class="small danger wide" @click="removeImage"><Icon name="trash-2" /> Удалить картинку</button>
       </div>
     </div>
     <div class="tab-pane tab-pane-flex" :class="{ active: activeTab === 'tab-drawing' }">
       <p class="muted small fog-hint">Рисуйте по карте — линии видят все. ПКМ — отменить последний штрих. Пока блок открыт, фишки не выбираются.</p>
       <div class="fog-group">
         <div class="row" style="gap:4px">
-          <button class="fog-btn draw-tool" :class="{ active: drawTool === 'pen' }" title="Перо" aria-label="Перо" @click="setDrawTool('pen')">🖊️</button>
-          <button class="fog-btn draw-tool" :class="{ active: drawTool === 'eraser' }" title="Ластик — стирает только ваши линии" aria-label="Ластик" @click="setDrawTool('eraser')">🧹</button>
+          <button class="fog-btn draw-tool" :class="{ active: drawTool === 'pen' }" title="Перо" aria-label="Перо" @click="setDrawTool('pen')"><Icon name="pen-line" /> Перо</button>
+          <button class="fog-btn draw-tool" :class="{ active: drawTool === 'eraser' }" title="Ластик — стирает только ваши линии" aria-label="Ластик" @click="setDrawTool('eraser')"><Icon name="eraser" /> Ластик</button>
         </div>
       </div>
       <div class="fog-group">
         <span class="fog-label">Толщина: <span>{{ drawWidth }}</span></span>
         <input type="range" min="1" max="16" v-model="drawWidth" @input="onDrawWidthInput">
       </div>
-      <button class="fog-btn wide" @click="undoDraw">↩ Отменить моё действие</button>
-      <button class="fog-btn danger wide" @click="clearAllDraw">Очистить всё (у всех)</button>
+      <button class="fog-btn wide" @click="undoDraw"><Icon name="undo-2" /> Отменить моё действие</button>
+      <button class="fog-btn danger wide" @click="clearAllDraw"><Icon name="trash-2" /> Очистить всё (у всех)</button>
     </div>
     <div class="tab-pane tab-pane-flex" :class="{ active: activeTab === 'tab-locations' }">
       <div class="map-images-list">
@@ -350,26 +354,27 @@ function removeLocation(locationId) {
             autofocus
           >
           <template v-else>
-            <span class="location-row-name">{{ loc.id === store.activeLocationId ? '📍 ' : '' }}{{ loc.name }}</span>
+            <span class="location-row-name"><Icon v-if="loc.id === store.activeLocationId" name="map-pin" class="ico-accent" /> {{ loc.name }}</span>
             <span class="location-row-actions">
-              <button class="small" title="Переименовать" @click.stop="startRename(loc)">✏️</button>
+              <button class="small" title="Переименовать" aria-label="Переименовать" @click.stop="startRename(loc)"><Icon name="pencil" /></button>
               <button
                 v-if="loc.id !== store.activeLocationId"
                 class="small danger"
                 title="Удалить локацию"
+                aria-label="Удалить локацию"
                 @click.stop="removeLocation(loc.id)"
-              >🗑️</button>
+              ><Icon name="trash-2" /></button>
             </span>
           </template>
         </div>
         <p v-if="!store.locations.length" class="muted small">Нет локаций</p>
       </div>
       <div class="row" style="gap:4px">
-        <button class="fog-btn" title="Выбранную локацию выше в списке" :disabled="!canMoveUp" @click="moveSelectedLocation(-1)">▲</button>
-        <button class="fog-btn" title="Выбранную локацию ниже в списке" :disabled="!canMoveDown" @click="moveSelectedLocation(1)">▼</button>
+        <button class="fog-btn" title="Выбранную локацию выше в списке" aria-label="Выше" :disabled="!canMoveUp" @click="moveSelectedLocation(-1)"><Icon name="arrow-up" /></button>
+        <button class="fog-btn" title="Выбранную локацию ниже в списке" aria-label="Ниже" :disabled="!canMoveDown" @click="moveSelectedLocation(1)"><Icon name="arrow-down" /></button>
       </div>
-      <button class="fog-btn fog-toggle" :disabled="!canGoToSelected" @click="goToSelectedLocation">➡️ Перейти на выбранную локацию</button>
-      <button class="fog-btn wide" @click="openLocationDialog">➕ Создать локацию</button>
+      <button class="fog-btn fog-toggle" :disabled="!canGoToSelected" @click="goToSelectedLocation"><Icon name="arrow-right" /> Перейти на выбранную локацию</button>
+      <button class="fog-btn wide" @click="openLocationDialog"><Icon name="plus" /> Создать локацию</button>
     </div>
   </div>
   <Modal v-if="showLocationDialog" @close="showLocationDialog = false">
@@ -379,7 +384,7 @@ function removeLocation(locationId) {
       <input v-model="newLocationName" placeholder="Название" @keyup.enter="addLocation" autofocus>
     </div>
     <div class="form-actions">
-      <button @click="addLocation">Создать</button>
+      <button class="primary" @click="addLocation">Создать</button>
       <button @click="showLocationDialog = false">Отмена</button>
     </div>
   </Modal>

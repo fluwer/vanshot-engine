@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue';
+import Icon from '../gm-panel/Icon.vue';
 
 const props = defineProps({
   store: { type: Object, required: true },
@@ -31,5 +32,5 @@ function roll(key) {
   <div class="attr-buttons">
     <button v-for="(value, key) in character?.attributes" :key="key" @click="roll(key)">{{ label(key, value) }}</button>
   </div>
-  <label class="resolve-toggle"><input type="checkbox" v-model="spendResolve"> −1 Решимость → +2</label>
+  <label class="resolve-toggle"><input type="checkbox" v-model="spendResolve"> −1 Решимость <Icon name="arrow-right" /> +2</label>
 </template>

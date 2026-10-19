@@ -1,4 +1,5 @@
 <script setup>
+import Icon from './Icon.vue';
 // Плавающая НЕ блокирующая карточка: игроки предложили картинку (Ctrl+V) и ждут
 // решения ГМ. Картинка на карте появляется только после «Принять»; предложения
 // живут в памяти сервера (см. gameState.proposeMapImage), сюда их присылают
@@ -29,15 +30,15 @@ function reject(p) {
 
 <template>
   <div v-if="store.proposals.length" class="proposals-card" role="alert">
-    <div class="proposals-title">🖼️ Игроки предлагают картинки ({{ store.proposals.length }})</div>
+    <div class="proposals-title"><Icon name="image" /> Игроки предлагают картинки ({{ store.proposals.length }})</div>
     <div v-for="p in store.proposals" :key="p.id" class="proposal-row">
       <img class="proposal-thumb" :src="p.dataUrl" :alt="p.name">
       <div class="proposal-body">
         <div class="proposal-author">{{ p.authorName }}</div>
         <div class="proposal-name muted small">{{ p.name }}</div>
         <div class="row" style="gap:4px">
-          <button class="fog-btn" @click="approve(p)">✅ Принять</button>
-          <button class="fog-btn danger" @click="reject(p)">✖ Отклонить</button>
+          <button class="fog-btn primary" @click="approve(p)"><Icon name="check" /> Принять</button>
+          <button class="fog-btn danger" @click="reject(p)"><Icon name="x" /> Отклонить</button>
         </div>
       </div>
     </div>

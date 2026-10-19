@@ -26,7 +26,6 @@
   const MAX_WAITING = 30;    // потолок очереди отложенных бросков (лог всё равно хранит 30)
   const LAYOUT_RETRIES = 6;  // сколько раз повторять, если слой ещё не размечен (размер 0)
   const LAYOUT_RETRY_MS = 150;
-  const ATTR_ICONS = { body: '💪', mind: '🧠', charisma: '💬' };
   const reduceMotion = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
 
   let seen = new Set();   // id записей, которые уже показаны (или пропущены осознанно)
@@ -93,18 +92,6 @@
     + '<path d="M50 4V18M91 27L79 66M9 27L21 66M91 73L79 66M9 73L21 66M50 96L21 66M50 96L79 66" stroke="rgba(255,255,255,.35)" stroke-width="2" fill="none"/>'
     + '</svg>';
 
-  function detailText(e) {
-    const parts = [String(e.die)];
-    if (e.attribute) {
-      const sign = e.attrValue >= 0 ? '+' : '−';
-      parts.push(`${ATTR_ICONS[e.attribute] || '🔹'} ${sign}${Math.abs(e.attrValue)}`);
-    }
-    if (e.resolveBonus) parts.push(`✨ +${e.resolveBonus}`);
-    let text = parts.join(' ');
-    if (e.dc) text += ` · DC ${e.dc} ${e.success ? '✅' : '❌'}`;
-    return text;
-  }
-
   function buildItem(entry, size) {
     const item = document.createElement('div');
     item.className = 'dfx-item';
@@ -124,13 +111,17 @@
     chip.className = 'dfx-chip';
     const name = document.createElement('div');
     name.className = 'dfx-chip-name';
-    name.textContent = entry.dead ? `${entry.characterName} ☠` : entry.characterName;
+    name.textContent = entry.characterName;
+    if (entry.dead) { // бросок убитого персонажа — значок-череп после имени
+      const skull = window.Icons.el('skull');
+      if (skull) name.append(' ', skull);
+    }
     const total = document.createElement('div');
     total.className = 'dfx-chip-total';
     total.textContent = String(entry.total);
     const detail = document.createElement('div');
     detail.className = 'dfx-chip-detail';
-    detail.textContent = detailText(entry);
+    window.renderDiceParts(detail, window.diceChipParts(entry)); // части: числа и иконки (dice.js)
     chip.append(name, total, detail);
 
     item.append(die, chip);

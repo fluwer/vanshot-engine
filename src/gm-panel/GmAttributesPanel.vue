@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue';
+import Icon from './Icon.vue';
 
 // Переиспользует тот же store, что и CharactersPanel (characters/npcs/selected) —
 // ту же выборку строит sidebar, не нужно тащить отдельную копию через bridge.
@@ -11,7 +12,7 @@ const props = defineProps({
 const ATTRIBUTE_LABELS = { body: 'Тело', mind: 'Разум', charisma: 'Харизма' };
 // Те же иконки, что и в public/js/dice.js (ATTR_ICONS) — переиспользуем,
 // чтобы не заводить второй набор эмодзи для одних и тех же атрибутов.
-const ATTRIBUTE_ICONS = { body: '💪', mind: '🧠', charisma: '💬' };
+const ATTRIBUTE_ICONS = window.ATTR_ICONS; // тело/разум/харизма — единый справочник public/js/icons.js
 
 const activeEntity = computed(() => {
   const sel = props.store.selected;
@@ -43,6 +44,6 @@ function roll(key) {
       class="small"
       :title="ATTRIBUTE_LABELS[key] || key"
       @click="roll(key)"
-    >{{ ATTRIBUTE_ICONS[key] || '🔹' }} {{ attrSign(value) }}{{ value }}</button>
+    ><Icon :name="ATTRIBUTE_ICONS[key] || 'diamond'" /> {{ attrSign(value) }}{{ value }}</button>
   </div>
 </template>

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch } from 'vue';
 import { useDock } from '../gm-panel/useDock.js';
+import Icon from '../gm-panel/Icon.vue';
 
 const props = defineProps({
   bridge: { type: Object, required: true },
@@ -35,11 +36,11 @@ function undo() {
       <p class="muted small fog-hint">Рисуйте по карте — линии видят все. ПКМ — отменить последний штрих. Пока блок открыт, ход фишки приостановлен.</p>
       <div class="fog-group">
         <div class="row" style="gap:4px">
-          <button class="fog-btn draw-tool" :class="{ active: tool === 'pen' }" title="Перо" aria-label="Перо" @click="setTool('pen')">🖊️</button>
-          <button class="fog-btn draw-tool" :class="{ active: tool === 'eraser' }" title="Ластик — стирает только ваши линии" aria-label="Ластик" @click="setTool('eraser')">🧹</button>
+          <button class="fog-btn draw-tool" :class="{ active: tool === 'pen' }" title="Перо" aria-label="Перо" @click="setTool('pen')"><Icon name="pen-line" /> Перо</button>
+          <button class="fog-btn draw-tool" :class="{ active: tool === 'eraser' }" title="Ластик — стирает только ваши линии" aria-label="Ластик" @click="setTool('eraser')"><Icon name="eraser" /> Ластик</button>
         </div>
       </div>
-      <button class="fog-btn wide" @click="undo">↩ Отменить моё действие</button>
+      <button class="fog-btn wide" @click="undo"><Icon name="undo-2" /> Отменить моё действие</button>
     </div>
   </div>
 </template>

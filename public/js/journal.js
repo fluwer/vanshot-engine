@@ -1,4 +1,4 @@
-// Журнал: один блок «Чат | Броски» за кнопкой 💬 справа внизу (и у ГМ, и у игрока).
+// Журнал: один блок «Чат | Броски» за кнопкой-пузырём справа внизу (и у ГМ, и у игрока).
 // Независим от левой панели Dock. Чат (chat.js) и лог бросков (DiceLogPanel.vue)
 // остаются как есть — журнал владеет только контейнером, вкладками, бейджем
 // непрочитанных и короткими «всплывашками» над кнопкой.
@@ -20,7 +20,7 @@
   let badge;
   let peek;
   let panel;
-  let chatTabBtn;
+  let chatTabLabel;
   let tabs;
   let isOpen = false;
   let unread = 0;
@@ -41,7 +41,8 @@
     if (!badge) return;
     badge.hidden = unread === 0;
     badge.textContent = unread > 9 ? '9+' : String(unread);
-    if (chatTabBtn) chatTabBtn.textContent = unread > 0 && isOpen ? `💬 Чат · ${unread}` : '💬 Чат';
+    // Меняем только подпись: иконка вкладки живёт отдельным узлом (textContent у кнопки её бы затёр).
+    if (chatTabLabel) chatTabLabel.textContent = unread > 0 && isOpen ? `Чат · ${unread}` : 'Чат';
   }
 
   function clearPeek() {
@@ -83,8 +84,13 @@
       const line = document.createElement('div');
       line.className = 'journal-peek-line';
       const author = document.createElement('strong');
-      const name = entry.dead ? `${entry.author} ☠` : entry.author;
-      author.textContent = entry.kind === 'emote' ? `* ${name} ` : `${name}: `;
+      author.textContent = entry.kind === 'emote' ? `* ${entry.author}` : entry.author;
+      if (entry.dead) {
+        // автор играет убитым персонажем — значок-череп отдельным узлом (имя только через textContent)
+        const skull = window.Icons.el('skull');
+        if (skull) author.append(' ', skull);
+      }
+      author.append(entry.kind === 'emote' ? ' ' : ': ');
       line.append(author, document.createTextNode(entry.text));
       line.addEventListener('click', () => setOpen(true));
       peek.appendChild(line);
@@ -125,7 +131,7 @@
     peek = document.getElementById('journal-peek');
     panel = document.getElementById('journal-panel');
     if (!btn || !panel) return;
-    chatTabBtn = panel.querySelector('.dock-tabs [data-tab="chat"]');
+    chatTabLabel = panel.querySelector('.dock-tabs [data-tab="chat"] .tab-label');
     tabs = window.Dock.initTabs(panel, (name) => {
       if (name === 'chat') {
         markRead();

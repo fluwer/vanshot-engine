@@ -107,7 +107,7 @@
     closeBtn.className = 'dock-close';
     closeBtn.title = 'Закрыть (Esc)';
     closeBtn.setAttribute('aria-label', 'Закрыть');
-    closeBtn.textContent = '✕';
+    closeBtn.appendChild(window.Icons.el('x'));
     closeBtn.addEventListener('click', close);
     head.append(title, closeBtn);
     block.insertBefore(head, block.firstChild);
@@ -128,7 +128,10 @@
     }
     const ico = document.createElement('span');
     ico.className = 'dock-ico';
-    ico.textContent = item.icon;
+    // item.icon — ИМЯ иконки из реестра (public/js/icons.js); неизвестное имя покажем текстом.
+    const iconEl = window.Icons.el(item.icon);
+    if (iconEl) ico.appendChild(iconEl);
+    else ico.textContent = item.icon;
     const lbl = document.createElement('span');
     lbl.className = 'dock-lbl';
     lbl.textContent = item.label;
@@ -196,7 +199,7 @@
     collapse.className = 'dock-close';
     collapse.title = 'Свернуть колонку';
     collapse.setAttribute('aria-label', 'Свернуть колонку');
-    collapse.textContent = '›';
+    collapse.appendChild(window.Icons.el('chevron-right'));
     head.append(title, collapse);
     sideEl.insertBefore(head, sideEl.firstChild);
 
@@ -206,7 +209,7 @@
     sideToggle.id = 'dock-side-toggle';
     sideToggle.title = `${opts.title || 'Участники'} — развернуть`;
     sideToggle.setAttribute('aria-label', `${opts.title || 'Участники'} — развернуть`);
-    sideToggle.textContent = '👥';
+    sideToggle.appendChild(window.Icons.el('users', { size: 18 }));
     stage.appendChild(sideToggle);
 
     function setSide(open) {

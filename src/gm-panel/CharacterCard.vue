@@ -2,6 +2,7 @@
 import { ref } from 'vue';
 import StatRow from './StatRow.vue';
 import InventoryEditor from './InventoryEditor.vue';
+import Icon from './Icon.vue';
 
 const props = defineProps({
   character: { type: Object, required: true },
@@ -39,12 +40,12 @@ function handleCardClick(e) {
       <img v-if="character.avatar" class="gm-avatar" :src="character.avatar" alt="">
       <span v-else class="gm-avatar gm-avatar-fallback" :style="{ background: character.color || '#888' }">{{ character.name[0] }}</span>
       <h3 style="margin:0">{{ character.name }} <template v-if="character.claimedBy">({{ character.claimedBy }})</template></h3>
-      <button class="small npc-info-toggle" title="Инфо-карточка" @click="emit('info')">ℹ️</button>
-      <button class="small" title="Свернуть/развернуть" @click="emit('toggle-expand')">{{ expanded ? '▾' : '▸' }}</button>
+      <button class="small npc-info-toggle" title="Инфо-карточка" aria-label="Инфо-карточка" @click="emit('info')"><Icon name="info" /></button>
+      <button class="small" title="Свернуть/развернуть" aria-label="Свернуть/развернуть" @click="emit('toggle-expand')"><Icon :name="expanded ? 'chevron-down' : 'chevron-right'" /></button>
     </div>
     <div class="row gm-stat-row">
       <label class="npc-flag-toggle">
-        <input type="checkbox" :checked="character.dead" @change="emit('dead-toggle', $event.target.checked)"> ☠ Убит
+        <input type="checkbox" :checked="character.dead" @change="emit('dead-toggle', $event.target.checked)"> <Icon name="skull" /> Убит
       </label>
     </div>
 
@@ -56,7 +57,7 @@ function handleCardClick(e) {
 
       <div class="row gm-stat-row">
         <input class="gm-item-input gm-damage-input" type="number" min="1" placeholder="Урон" v-model="damageAmount">
-        <button class="small gm-damage-apply" title="Применить урон" @click="applyDamage">⚔</button>
+        <button class="small gm-damage-apply" title="Применить урон" aria-label="Применить урон" @click="applyDamage"><Icon name="sword" /></button>
       </div>
 
       <InventoryEditor

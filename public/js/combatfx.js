@@ -27,7 +27,7 @@ function initCombatStartFx(socket, opts) {
 
     new Audio('assets/sfx/combat-start.mp3').play().catch(() => {}); // файл кладёт сам ГМ — без него просто тихо
 
-    overlay.innerHTML = '<h2 class="combat-start-title">⚔️ Инициатива!</h2><div class="combat-start-row"></div>';
+    overlay.innerHTML = `<h2 class="combat-start-title">${window.Icons.svg('swords')}<span>Инициатива!</span></h2><div class="combat-start-row"></div>`;
     const row = overlay.querySelector('.combat-start-row');
     overlay.classList.add('show');
 

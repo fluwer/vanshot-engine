@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import Icon from '../gm-panel/Icon.vue';
 
 const props = defineProps({
   store: { type: Object, required: true },
@@ -128,7 +129,7 @@ function join() {
       >
     </div>
     <label class="upload-label">
-      Загрузить свой аватар
+      <Icon name="upload" /> Загрузить свой аватар
       <input type="file" accept="image/*" hidden @change="onFileChange">
     </label>
     <p class="avatar-upload-hint muted small">
@@ -138,6 +139,6 @@ function join() {
   </div>
 
   <div class="row">
-    <button class="wide" @click="join">Войти</button>
+    <button class="wide primary" @click="join">Войти</button>
   </div>
 </template>

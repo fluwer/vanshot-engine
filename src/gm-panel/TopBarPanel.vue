@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue';
+import Icon from './Icon.vue';
 
 const props = defineProps({
   store: { type: Object, required: true },
@@ -52,7 +53,7 @@ function restoreParty() {
     >{{ p.value }}</button>
   </div>
   <input type="number" placeholder="своё" title="Своё значение DC" style="width:60px" v-model="customDc" @change="onCustomChange">
-  <button class="small" title="Сбросить DC" @click="clearDc">✕</button>
-  <button @click="freeRoll" title="Бросок мастера (d20)">🎲</button>
-  <button @click="restoreParty" title="Восстановить энергию и решимость всем">🔄</button>
+  <button class="small" title="Сбросить DC" aria-label="Сбросить DC" @click="clearDc"><Icon name="x" /></button>
+  <button @click="freeRoll" title="Бросок мастера (d20)" aria-label="Бросок мастера (d20)"><Icon name="d20" /></button>
+  <button @click="restoreParty" title="Восстановить энергию и решимость всем" aria-label="Восстановить энергию и решимость всем"><Icon name="refresh-cw" /></button>
 </template>

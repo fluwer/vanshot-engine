@@ -278,13 +278,13 @@ document.addEventListener('keydown', (e) => {
 // src/gm-panel/useDock.js). Журнал (чат + броски) и «Отряд» — отдельные слоты.
 Dock.init({
   items: [
-    { id: 'character', icon: '🧍', label: 'Персонаж', title: 'Персонаж, навыки и инвентарь', block: 'character-panel', group: 0 },
-    { id: 'draw', icon: '✏️', label: 'Рисунок', title: 'Рисование', block: 'drawing-panel', group: 1 },
-    { id: 'vfx', icon: '✨', label: 'Эффекты', title: 'Спецэффекты', block: 'effects-panel', group: 1 },
-    { id: 'ruler', icon: '📏', label: 'Линейка', title: 'Линейка', block: 'ruler-panel', group: 1 },
-    { id: 'images', icon: '🖼️', label: 'Картинки', title: 'Мои картинки', block: 'images-panel', group: 1 },
-    { id: 'sound', icon: '🔊', label: 'Звук', title: 'Звук', block: 'sound-panel', group: 2 },
-    { id: 'leave', icon: '⎋', label: 'Выход', title: 'Забыть сессию на этом устройстве', action: leaveSession, bottom: true },
+    { id: 'character', icon: 'user', label: 'Персонаж', title: 'Персонаж, навыки и инвентарь', block: 'character-panel', group: 0 },
+    { id: 'draw', icon: 'pencil', label: 'Рисунок', title: 'Рисование', block: 'drawing-panel', group: 1 },
+    { id: 'vfx', icon: 'sparkles', label: 'Эффекты', title: 'Спецэффекты', block: 'effects-panel', group: 1 },
+    { id: 'ruler', icon: 'ruler', label: 'Линейка', title: 'Линейка', block: 'ruler-panel', group: 1 },
+    { id: 'images', icon: 'image', label: 'Картинки', title: 'Мои картинки', block: 'images-panel', group: 1 },
+    { id: 'sound', icon: 'volume-2', label: 'Звук', title: 'Звук', block: 'sound-panel', group: 2 },
+    { id: 'leave', icon: 'log-out', label: 'Выход', title: 'Забыть сессию на этом устройстве', action: leaveSession, bottom: true },
   ],
 });
 

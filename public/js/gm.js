@@ -156,14 +156,14 @@ initCombatStartFx(socket, {
 // «Участники» — отдельная правая колонка, открыта вместе с любым блоком. ----
 Dock.init({
   items: [
-    { id: 'fog', icon: '🌫️', label: 'Туман', title: 'Туман войны', block: 'maptools-panel', group: 0 },
-    { id: 'draw', icon: '✏️', label: 'Рисунок', title: 'Рисование', block: 'maptools-panel', group: 0 },
-    { id: 'images', icon: '🖼️', label: 'Картинки', title: 'Картинки на карте', block: 'maptools-panel', group: 0 },
-    { id: 'vfx', icon: '✨', label: 'Эффекты', title: 'Спецэффекты', block: 'effects-panel', group: 0 },
-    { id: 'ruler', icon: '📏', label: 'Линейка', title: 'Линейка', block: 'ruler-panel', group: 0 },
-    { id: 'locations', icon: '🗺️', label: 'Локации', title: 'Локации', block: 'maptools-panel', group: 1 },
-    { id: 'combat', icon: '⚔️', label: 'Бой', title: 'Бой', block: 'combat-panel', group: 1 },
-    { id: 'sound', icon: '🔊', label: 'Звук', title: 'Звук', block: 'sound-panel', group: 1 },
+    { id: 'fog', icon: 'cloud-fog', label: 'Туман', title: 'Туман войны', block: 'maptools-panel', group: 0 },
+    { id: 'draw', icon: 'pencil', label: 'Рисунок', title: 'Рисование', block: 'maptools-panel', group: 0 },
+    { id: 'images', icon: 'image', label: 'Картинки', title: 'Картинки на карте', block: 'maptools-panel', group: 0 },
+    { id: 'vfx', icon: 'sparkles', label: 'Эффекты', title: 'Спецэффекты', block: 'effects-panel', group: 0 },
+    { id: 'ruler', icon: 'ruler', label: 'Линейка', title: 'Линейка', block: 'ruler-panel', group: 0 },
+    { id: 'locations', icon: 'map', label: 'Локации', title: 'Локации', block: 'maptools-panel', group: 1 },
+    { id: 'combat', icon: 'swords', label: 'Бой', title: 'Бой', block: 'combat-panel', group: 1 },
+    { id: 'sound', icon: 'volume-2', label: 'Звук', title: 'Звук', block: 'sound-panel', group: 1 },
   ],
   side: { id: 'characters-panel', title: 'Участники' },
 });

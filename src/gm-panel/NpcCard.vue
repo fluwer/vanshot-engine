@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import StatRow from './StatRow.vue';
 import InventoryEditor from './InventoryEditor.vue';
+import Icon from './Icon.vue';
 
 const props = defineProps({
   npc: { type: Object, required: true },
@@ -21,11 +22,8 @@ const emit = defineEmits([
   'location-set',
 ]);
 
-const NPC_FACTIONS = [
-  { id: 'enemy', label: 'Враг', icon: '🔴' },
-  { id: 'ally', label: 'Союзник', icon: '🟢' },
-  { id: 'neutral', label: 'Нейтрал', icon: '⚪' },
-];
+// Фракции — единый справочник public/js/icons.js (подпись, значок, цвет).
+const NPC_FACTIONS = window.FACTION_LIST;
 
 const avatarColor = computed(() => {
   const style = props.factionStyle && (props.factionStyle[props.npc.faction] || props.factionStyle.neutral);
@@ -54,8 +52,8 @@ function handleCardClick(e) {
       <img v-if="npc.avatar" class="gm-avatar" :src="npc.avatar" alt="">
       <span v-else class="gm-avatar gm-avatar-fallback" :style="{ background: avatarColor }">{{ npc.name[0] }}</span>
       <h3 style="margin:0">{{ npc.name }} ({{ npc.role }})</h3>
-      <button class="small npc-info-toggle" title="Инфо-карточка" @click="emit('info')">ℹ️</button>
-      <button class="small" title="Свернуть/развернуть" @click="emit('toggle-expand')">{{ expanded ? '▾' : '▸' }}</button>
+      <button class="small npc-info-toggle" title="Инфо-карточка" aria-label="Инфо-карточка" @click="emit('info')"><Icon name="info" /></button>
+      <button class="small" title="Свернуть/развернуть" aria-label="Свернуть/развернуть" @click="emit('toggle-expand')"><Icon :name="expanded ? 'chevron-down' : 'chevron-right'" /></button>
     </div>
 
     <div class="row gm-stat-row" style="gap:10px">
@@ -63,7 +61,7 @@ function handleCardClick(e) {
         <input type="checkbox" :checked="npc.visible" @change="emit('visible-toggle', $event.target.checked)"> Виден игрокам
       </label>
       <label class="npc-flag-toggle">
-        <input type="checkbox" :checked="npc.dead" @change="emit('dead-toggle', $event.target.checked)"> ☠ Убит
+        <input type="checkbox" :checked="npc.dead" @change="emit('dead-toggle', $event.target.checked)"> <Icon name="skull" /> Убит
       </label>
     </div>
 
@@ -74,8 +72,9 @@ function handleCardClick(e) {
         class="fog-btn npc-faction-btn"
         :class="{ active: (npc.faction || 'neutral') === f.id }"
         :title="f.label"
+        :aria-label="f.label"
         @click="emit('faction-set', f.id)"
-      >{{ f.icon }}</button>
+      ><Icon :name="f.icon" :class="`fico-${f.id}`" /></button>
     </div>
 
     <div v-if="locations.length > 1" class="row gm-stat-row" style="gap:6px">
@@ -93,7 +92,7 @@ function handleCardClick(e) {
 
       <div class="row gm-stat-row">
         <input class="gm-item-input gm-damage-input" type="number" min="1" placeholder="Урон" v-model="damageAmount">
-        <button class="small gm-damage-apply" title="Применить урон" @click="applyDamage">⚔</button>
+        <button class="small gm-damage-apply" title="Применить урон" aria-label="Применить урон" @click="applyDamage"><Icon name="sword" /></button>
       </div>
 
       <InventoryEditor

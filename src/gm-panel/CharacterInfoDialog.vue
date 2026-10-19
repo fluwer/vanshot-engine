@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch } from 'vue';
 import Modal from './Modal.vue';
+import Icon from './Icon.vue';
 
 const props = defineProps({
   character: { type: Object, required: true },
@@ -109,13 +110,13 @@ function remove() {
       <div class="skills-grid">
         <label v-for="(info, skillName) in skillsCatalog" :key="skillName" class="skill-toggle">
           <input type="checkbox" :checked="skills.includes(skillName)" @change="toggleSkill(skillName)">
-          {{ info.icon }} {{ skillName }}
+          <Icon :name="info.icon" /> {{ skillName }}
         </label>
       </div>
     </div>
 
     <div class="form-actions">
-      <button @click="save">Сохранить</button>
+      <button class="primary" @click="save">Сохранить</button>
       <button class="danger" @click="remove">Удалить</button>
     </div>
   </Modal>

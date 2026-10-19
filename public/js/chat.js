@@ -22,6 +22,14 @@ const CHAT_COMMANDS = [
   { cmd: 'help', hint: '— показать подсказку по командам' },
 ];
 
+// Значок «убит» после имени автора (вместо приклеенного к строке символа ☠).
+function appendDeadMark(node) {
+  const skull = window.Icons && window.Icons.el('skull');
+  if (!skull) return;
+  node.appendChild(document.createTextNode(' '));
+  node.appendChild(skull);
+}
+
 // chat — полный массив из state (может быть undefined до первого state-события).
 function renderChat(chat) {
   lastServerChat = chat || [];
@@ -50,15 +58,20 @@ function renderChat(chat) {
       const fadeSteps = distanceFromEnd - CHAT_FADE_SHARP_COUNT + 1;
       line.style.opacity = Math.max(CHAT_FADE_MIN, 1 - fadeSteps * CHAT_FADE_STEP);
     }
-    const authorName = entry.dead ? `${entry.author} ☠` : entry.author; // автор играет убитым персонажем
+    // entry.dead — автор играет убитым персонажем: после имени значок-череп (иконка из реестра
+    // отдельным узлом, имя — только через textContent/createTextNode).
     if (entry.kind === 'emote') {
-      line.appendChild(document.createTextNode(`* ${authorName} ${entry.text} *`));
+      line.appendChild(document.createTextNode(`* ${entry.author}`));
+      if (entry.dead) appendDeadMark(line);
+      line.appendChild(document.createTextNode(` ${entry.text} *`));
     } else if (entry.kind === 'notice') {
       line.appendChild(document.createTextNode(entry.text));
     } else {
       const author = document.createElement('span');
       author.className = 'chat-author';
-      author.textContent = `${authorName}: `;
+      author.textContent = entry.author;
+      if (entry.dead) appendDeadMark(author);
+      author.appendChild(document.createTextNode(': '));
       line.appendChild(author);
       line.appendChild(document.createTextNode(entry.text));
     }

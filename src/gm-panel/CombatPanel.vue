@@ -1,5 +1,6 @@
 <script setup>
 import { reactive } from 'vue';
+import Icon from './Icon.vue';
 
 const props = defineProps({
   store: { type: Object, required: true },
@@ -11,14 +12,8 @@ const props = defineProps({
   selection: { type: Object, required: true },
 });
 
-// Тот же приём, что уже в NpcCard.vue — маленькая статичная константа
-// дублируется локально, а не тащится через bridge.
-const NPC_FACTIONS = [
-  { id: 'enemy', label: 'Враг', icon: '🔴' },
-  { id: 'ally', label: 'Союзник', icon: '🟢' },
-  { id: 'neutral', label: 'Нейтрал', icon: '⚪' },
-];
-const NPC_FACTION_BY_ID = Object.fromEntries(NPC_FACTIONS.map((f) => [f.id, f]));
+// Фракции NPC — единый справочник public/js/icons.js (window.FACTIONS): подпись, значок, цвет.
+const FACTIONS = window.FACTIONS;
 
 // picked — состояние чеклиста участников. Ключ 'type:id' -> checked.
 // Живёт в компоненте (не в store), поэтому переживает обновления store
@@ -57,7 +52,7 @@ function onStart() {
 function factionFor(entry) {
   if (entry.type !== 'npc') return null;
   const npc = props.store.npcs.find((n) => n.id === entry.id);
-  return npc ? NPC_FACTION_BY_ID[npc.faction || 'neutral'] : null;
+  return npc ? FACTIONS[npc.faction || 'neutral'] || FACTIONS.neutral : null;
 }
 
 function turnRowClass(entry, index) {
@@ -86,21 +81,21 @@ function onRowClick(entry) {
         <button class="fog-btn" title="Снять все отметки" @click="pickNone">Сбросить</button>
       </div>
       <div class="combat-pick-list">
-        <div class="combat-pick-group-label">🧑‍🤝‍🧑 Персонажи</div>
+        <div class="combat-pick-group-label"><Icon name="users" /> Персонажи</div>
         <label v-for="c in store.characters" :key="`character-${c.id}`" class="combat-pick" :class="{ dead: c.dead }">
-          <input type="checkbox" :checked="picked[`character:${c.id}`]" @change="togglePicked('character', c.id)"> {{ c.name }}<span v-if="c.dead" title="Убит"> ☠</span>
+          <input type="checkbox" :checked="picked[`character:${c.id}`]" @change="togglePicked('character', c.id)"> {{ c.name }}<Icon v-if="c.dead" name="skull" class="ico-dead" title="Убит" />
         </label>
-        <div class="combat-pick-group-label">🎭 NPC</div>
+        <div class="combat-pick-group-label"><Icon name="drama" /> NPC</div>
         <label v-for="n in store.npcs" :key="`npc-${n.id}`" class="combat-pick" :class="{ dead: n.dead }">
-          <input type="checkbox" :checked="picked[`npc:${n.id}`]" @change="togglePicked('npc', n.id)"> {{ n.name }}<span v-if="n.dead" title="Убит"> ☠</span><span v-if="!n.dead && !n.visible" title="Скрыт от игроков"> 🙈</span>
+          <input type="checkbox" :checked="picked[`npc:${n.id}`]" @change="togglePicked('npc', n.id)"> {{ n.name }}<Icon v-if="n.dead" name="skull" class="ico-dead" title="Убит" /><Icon v-if="!n.dead && !n.visible" name="eye-off" class="ico-dead" title="Скрыт от игроков" />
         </label>
       </div>
-      <button class="small wide" title="Бросить инициативу (d20 + Тело) и начать бой отмеченными участниками" @click="onStart">🎲 Начать бой</button>
+      <button class="small wide primary" title="Бросить инициативу (d20 + Тело) и начать бой отмеченными участниками" @click="onStart"><Icon name="d20" /> Начать бой</button>
     </div>
     <div v-else>
       <div class="row" style="justify-content:space-between">
         <strong>Раунд {{ store.combat.round }}</strong>
-        <button class="small" title="Завершить бой" @click="bridge.socket.emit('combat:end')">⏹ Завершить бой</button>
+        <button class="small danger" title="Завершить бой" @click="bridge.socket.emit('combat:end')"><Icon name="square" /> Завершить бой</button>
       </div>
       <div class="combat-turn-list">
         <div
@@ -110,11 +105,11 @@ function onRowClick(entry) {
           :class="turnRowClass(entry, i)"
           @click="onRowClick(entry)"
         >
-          <span>{{ factionFor(entry) ? `${factionFor(entry).icon} ` : '' }}{{ entry.name }}</span>
-          <span class="muted small" title="Инициатива">🎲 {{ entry.initiative }}</span>
+          <span class="ico-label"><Icon v-if="factionFor(entry)" :name="factionFor(entry).icon" :class="`fico-${factionFor(entry).id}`" />{{ entry.name }}</span>
+          <span class="muted small ico-label" title="Инициатива"><Icon name="d20" /> {{ entry.initiative }}</span>
         </div>
       </div>
-      <button class="small wide" title="Передать ход следующему участнику" @click="bridge.socket.emit('combat:next')">⏭ Следующий ход</button>
+      <button class="small wide" title="Передать ход следующему участнику" @click="bridge.socket.emit('combat:next')"><Icon name="skip-forward" /> Следующий ход</button>
     </div>
   </div>
 </template>

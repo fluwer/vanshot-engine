@@ -1,6 +1,7 @@
 <script setup>
 import { computed, watch } from 'vue';
 import { useDock } from '../gm-panel/useDock.js';
+import Icon from '../gm-panel/Icon.vue';
 
 // Блок «Картинки» игрока: свои картинки на карте (те, что ГМ принял после Ctrl+V).
 // Владелец сам двигает/масштабирует/вращает их, пока ГМ не заблокировал 🔒, и может
@@ -64,22 +65,22 @@ function remove(m) {
           :class="{ selected: m.id === store.selectedId }"
           @click="select(m.id)"
         >
-          <span class="location-row-name">{{ m.locked ? '🔒 ' : '' }}{{ m.name || 'Картинка' }}</span>
+          <span class="location-row-name"><Icon v-if="m.locked" name="lock" /> {{ m.name || 'Картинка' }}</span>
           <span class="location-row-actions">
-            <button class="small" title="Показать на карте" @click.stop="center(m)">🎯</button>
+            <button class="small" title="Показать на карте" aria-label="Показать на карте" @click.stop="center(m)"><Icon name="crosshair" /></button>
             <button
               class="small danger"
               :disabled="m.locked"
               :title="m.locked ? 'ГМ заблокировал картинку' : 'Удалить картинку'"
               @click.stop="remove(m)"
-            >🗑️</button>
+            ><Icon name="trash-2" /></button>
           </span>
         </div>
         <p v-if="!mine.length" class="muted small">
           Здесь пока нет ваших картинок. Вставьте картинку через Ctrl+V — ГМ должен её принять.
         </p>
       </div>
-      <p class="muted small">Лимит: {{ MAX_IMAGES }} картинки на игрока. 🔒 — ГМ заблокировал правку.</p>
+      <p class="muted small">Лимит: {{ MAX_IMAGES }} картинки на игрока. <Icon name="lock" /> — ГМ заблокировал правку.</p>
     </div>
   </div>
 </template>

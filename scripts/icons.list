@@ -1,0 +1,94 @@
+# Иконки интерфейса: по одному имени на строку. Берутся из lucide-static (node_modules/lucide-static/icons/<имя>.svg)
+# либо из scripts/custom-icons/<имя>.svg (собственные — они важнее одноимённых из Lucide).
+# После правки списка: npm run icons → public/js/icons-data.js (коммитится).
+
+# --- левая панель и навигация
+cloud-fog
+pencil
+image
+sparkles
+ruler
+map
+swords
+volume-2
+user
+users
+drama
+log-out
+x
+chevron-right
+chevron-down
+chevron-up
+chevron-left
+arrow-up
+arrow-down
+arrow-right
+
+# --- вкладки, журнал, звук
+message-square
+message-circle
+dices
+music
+play
+pause
+square
+skip-forward
+
+# --- кости и результат броска
+d20
+target
+circle-check
+circle-x
+diamond
+
+# --- атрибуты и ресурсы
+biceps-flexed
+brain
+heart
+zap
+
+# --- статусы
+skull
+eye-off
+lock
+map-pin
+
+# --- действия и инструменты
+plus
+trash-2
+check
+info
+refresh-cw
+undo-2
+pen-line
+brush
+eraser
+square-dashed
+sword
+crosshair
+upload
+
+# --- спецэффекты
+wind
+flame
+party-popper
+bomb
+wand-sparkles
+
+# --- навыки (server/data/skills.json)
+wrench
+lightbulb
+rat
+hand
+route
+hand-fist
+angry
+clipboard-list
+stethoscope
+search
+megaphone
+
+# --- фракции NPC (только собственные)
+faction-enemy
+faction-ally
+faction-neutral

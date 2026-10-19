@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted, watch } from 'vue';
+import Icon from './Icon.vue';
 
 const props = defineProps({
   bridge: { type: Object, required: true },
@@ -77,8 +78,8 @@ function onMusicFileChange(e) {
 
 <template>
   <div class="panel-tabs">
-    <button class="panel-tab" :class="{ active: activeTab === 'soundboard' }" @click="activeTab = 'soundboard'">🔊 Саундборд</button>
-    <button class="panel-tab" :class="{ active: activeTab === 'music' }" @click="activeTab = 'music'">🎵 Музыка</button>
+    <button class="panel-tab" :class="{ active: activeTab === 'soundboard' }" @click="activeTab = 'soundboard'"><Icon name="volume-2" /> Саундборд</button>
+    <button class="panel-tab" :class="{ active: activeTab === 'music' }" @click="activeTab = 'music'"><Icon name="music" /> Музыка</button>
   </div>
   <div class="row sound-panel-toolbar" style="justify-content:flex-end; padding: 4px 8px; box-sizing:border-box;">
     <button
@@ -86,13 +87,13 @@ function onMusicFileChange(e) {
       :class="{ danger: editMode }"
       :title="editMode ? 'Выключить — скрыть кнопки удаления' : 'Включить — показать кнопки удаления звуков/трека'"
       @click="editMode = !editMode"
-    >{{ editMode ? '✓ Готово' : '✎ Редактировать' }}</button>
+    ><Icon :name="editMode ? 'check' : 'pencil'" /> {{ editMode ? 'Готово' : 'Редактировать' }}</button>
   </div>
   <div class="overlay-body">
     <div class="tab-pane tab-pane-flex soundboard-list" :class="{ active: activeTab === 'soundboard' }">
       <div id="soundboard-list" class="soundboard-list"></div>
       <label class="upload-label" v-show="editMode">
-        Загрузить звук
+        <Icon name="upload" /> Загрузить звук
         <input type="file" accept="audio/*" hidden @change="onSoundFileChange">
       </label>
     </div>
@@ -102,18 +103,18 @@ function onMusicFileChange(e) {
         <select id="music-track-select"></select>
       </div>
       <div class="row" style="gap:4px">
-        <button id="music-play" class="fog-btn" title="Играть">▶</button>
-        <button id="music-pause" class="fog-btn" title="Пауза">⏸</button>
-        <button id="music-stop" class="fog-btn" title="Стоп">⏹</button>
-        <button id="music-delete" class="fog-btn danger" v-show="editMode" title="Удалить трек">✕</button>
+        <button id="music-play" class="fog-btn" title="Играть" aria-label="Играть"><Icon name="play" /></button>
+        <button id="music-pause" class="fog-btn" title="Пауза" aria-label="Пауза"><Icon name="pause" /></button>
+        <button id="music-stop" class="fog-btn" title="Стоп" aria-label="Стоп"><Icon name="square" /></button>
+        <button id="music-delete" class="fog-btn danger" v-show="editMode" title="Удалить трек" aria-label="Удалить трек"><Icon name="x" /></button>
       </div>
       <p class="muted small" id="music-now-playing">Тишина</p>
       <div class="fog-group">
-        <span class="fog-label" title="Громкость слышна только вам">🔊 <span id="music-volume-value">50</span>%</span>
+        <span class="fog-label ico-label" title="Громкость слышна только вам"><Icon name="volume-2" /> <span id="music-volume-value">50</span>%</span>
         <input id="music-volume" type="range" min="0" max="100" value="50">
       </div>
       <label class="upload-label" v-show="editMode">
-        Загрузить трек
+        <Icon name="upload" /> Загрузить трек
         <input type="file" accept="audio/*" hidden @change="onMusicFileChange">
       </label>
     </div>

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch } from 'vue';
 import Modal from './Modal.vue';
+import Icon from './Icon.vue';
 
 const props = defineProps({
   npc: { type: Object, required: true },
@@ -67,7 +68,7 @@ function remove() {
         :src="url"
         @click="emit('avatar-preset', url)"
       >
-      <input type="file" accept="image/*" class="npc-avatar-file" style="max-width:120px" @change="onFileChange">
+      <label class="upload-label upload-inline"><Icon name="upload" /> Свой файл<input type="file" accept="image/*" class="npc-avatar-file" hidden @change="onFileChange"></label>
     </div>
 
     <div class="form-field">
@@ -105,7 +106,7 @@ function remove() {
     </div>
 
     <div class="form-actions">
-      <button @click="save">Сохранить</button>
+      <button class="primary" @click="save">Сохранить</button>
       <button class="danger" @click="remove">Удалить</button>
     </div>
   </Modal>

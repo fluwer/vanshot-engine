@@ -911,7 +911,7 @@ function formatFreeRoll(count, sides, mod) {
   const sum = rolls.reduce((a, b) => a + b, 0);
   const total = sum + mod;
   const expr = `${count}d${sides}${mod ? (mod > 0 ? `+${mod}` : mod) : ''}`;
-  const rollsStr = rolls.map((r) => `🎲${r}`).join(' + ');
+  const rollsStr = rolls.join(' + '); // без эмодзи: иконки интерфейса — отдельная система (public/js/icons.js)
   const modStr = mod ? ` ${mod > 0 ? '+' : '-'} ${Math.abs(mod)}` : '';
   const eq = (count > 1 || mod) ? ` = ${total}` : '';
   return `бросает ${expr}: ${rollsStr}${modStr}${eq}`;

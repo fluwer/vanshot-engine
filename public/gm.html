@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ван-Шот — Мастер</title>
+<link rel="preload" href="assets/fonts/ibm-plex-sans-cyrillic-wdth-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/ibm-plex-sans-latin-wdth-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="css/tokens.css">
+<link rel="stylesheet" href="css/controls.css">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -40,7 +44,7 @@
       <div id="sound-panel-vue-root"></div>
     </div>
 
-    <!-- Правая колонка «Участники»: открыта вместе с левым блоком, сворачивается в 👥 -->
+    <!-- Правая колонка «Участники»: открыта вместе с левым блоком, сворачивается в кнопку-«людей» у края -->
     <div class="dock-side" id="characters-panel">
       <div id="characters-panel-vue-root"></div>
     </div>
@@ -61,11 +65,11 @@
     <div class="journal" id="journal-panel">
       <div class="dock-head">
         <span class="dock-title">Журнал</span>
-        <button type="button" class="dock-close" title="Закрыть (Esc)" aria-label="Закрыть">✕</button>
+        <button type="button" class="dock-close" title="Закрыть (Esc)" aria-label="Закрыть"><i data-icon="x"></i></button>
       </div>
       <div class="panel-tabs dock-tabs">
-        <button type="button" class="panel-tab active" data-tab="chat">💬 Чат</button>
-        <button type="button" class="panel-tab" data-tab="dice">🎲 Броски</button>
+        <button type="button" class="panel-tab active" data-tab="chat"><i data-icon="message-square"></i><span class="tab-label">Чат</span></button>
+        <button type="button" class="panel-tab" data-tab="dice"><i data-icon="dices"></i><span class="tab-label">Броски</span></button>
       </div>
       <div class="dock-pane active" data-pane="chat">
         <div id="chat-panel-vue-root"></div>
@@ -75,7 +79,7 @@
       </div>
     </div>
     <button type="button" class="journal-btn" id="journal-btn" title="Журнал: чат и броски" aria-label="Журнал: чат и броски" aria-pressed="false">
-      <span>💬</span><span class="journal-badge" id="journal-badge" hidden></span>
+      <i data-icon="message-square"></i><span class="journal-badge" id="journal-badge" hidden></span>
     </button>
 
     <!-- Нижняя панель: бросок за выбранного + DC и бросок мастера -->
@@ -86,6 +90,9 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
+  <script src="js/icons-data.js"></script>
+  <script src="js/icons.js"></script>
+  <script src="js/ui.js"></script>
   <script src="js/map.js"></script>
   <script src="js/dice.js"></script>
   <script src="js/combatfx.js"></script>

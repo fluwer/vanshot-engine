@@ -6,6 +6,7 @@ import AddEntityForm from './AddEntityForm.vue';
 import Modal from './Modal.vue';
 import CharacterInfoDialog from './CharacterInfoDialog.vue';
 import NpcInfoDialog from './NpcInfoDialog.vue';
+import Icon from './Icon.vue';
 
 const props = defineProps({
   store: { type: Object, required: true },
@@ -67,12 +68,12 @@ function onAddNpc(data) {
 
 <template>
   <div class="panel-tabs">
-    <button class="panel-tab" :class="{ active: activeTab === 'characters' }" @click="activeTab = 'characters'">🧑‍🤝‍🧑 Персонажи</button>
-    <button class="panel-tab" :class="{ active: activeTab === 'npcs' }" @click="activeTab = 'npcs'">🎭 NPC</button>
+    <button class="panel-tab" :class="{ active: activeTab === 'characters' }" @click="activeTab = 'characters'"><Icon name="users" /> Персонажи</button>
+    <button class="panel-tab" :class="{ active: activeTab === 'npcs' }" @click="activeTab = 'npcs'"><Icon name="drama" /> NPC</button>
   </div>
   <div class="overlay-body">
     <div class="tab-pane" :class="{ active: activeTab === 'characters' }">
-      <button class="fog-btn fog-toggle" @click="showAddCharacter = true">➕ Добавить</button>
+      <button class="fog-btn fog-toggle" @click="showAddCharacter = true"><Icon name="plus" /> Добавить</button>
       <CharacterCard
         v-for="c in store.characters"
         :key="c.id"
@@ -93,7 +94,7 @@ function onAddNpc(data) {
       />
     </div>
     <div class="tab-pane" :class="{ active: activeTab === 'npcs' }">
-      <button class="fog-btn fog-toggle" @click="showAddNpc = true">➕ Добавить</button>
+      <button class="fog-btn fog-toggle" @click="showAddNpc = true"><Icon name="plus" /> Добавить</button>
       <NpcCard
         v-for="n in store.npcs"
         :key="n.id"

@@ -1,17 +1,73 @@
+// Цвета и шрифт для canvas читаем из CSS-токенов (public/css/tokens.css), чтобы палитра
+// и шрифт менялись в одном месте. Значения здесь — запасные, на случай если CSS не применился.
+// Объект мутируется на месте (readTheme), поэтому ссылки на него остаются валидными.
+const THEME = {
+  font: "'IBM Plex Sans Variable', system-ui, sans-serif",
+  bg: '#0b0e13', text: '#e5ebf3', surface: 'rgba(14, 18, 24, 0.92)',
+  accent: '#79c6ee', amber: '#e8b04f', danger: '#e5675d', ok: '#5cc48d',
+};
+
 // NPC не имеют персональных цветов (их слишком много и они не «постоянные
-// герои» партии) — используем единый оттенок, совпадающий с .bar-fill.npc в CSS.
-const NPC_COLOR = '#c05656';
+// герои» партии) — запасной оттенок; на токене цвет задаёт фракция (FACTION_STYLE).
+const NPC_COLOR = '#e5675d';
 
 // Фракция NPC (npc.faction — её ставит ГМ в карточке NPC; она уже уходит игрокам в
-// публичном state и видна в полосе боя): кольцо токена и значок у имени. Значки те
-// же 🔴🟢⚪, что в NPC_FACTIONS у CombatStrip/CombatPanel, — различие читается и без
-// опоры на цвет. «Нейтрал» — способ ГМ не раскрывать намерения NPC.
+// публичном state и видна в полосе боя): кольцо токена и значок у имени. У каждой
+// фракции своя ФОРМА значка (треугольник / круг / кольцо — те же, что иконки
+// faction-* в интерфейсе), поэтому различие читается и без опоры на цвет. Цвета —
+// токены --enemy/--ally/--neutral. «Нейтрал» — способ ГМ не раскрывать намерения NPC.
 const FACTION_STYLE = {
-  enemy: { color: '#d9534f', icon: '🔴' },
-  ally: { color: '#4caf6f', icon: '🟢' },
-  neutral: { color: '#aeb6c9', icon: '⚪' },
+  enemy: { color: '#e5675d', shape: 'triangle' },
+  ally: { color: '#5cc48d', shape: 'circle' },
+  neutral: { color: '#9fb0c6', shape: 'ring' },
 };
 const factionStyleFor = (npc) => FACTION_STYLE[npc && npc.faction] || FACTION_STYLE.neutral;
+
+function readTheme() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = (name, fallback) => cs.getPropertyValue(name).trim() || fallback;
+  THEME.font = v('--font-ui', THEME.font);
+  THEME.bg = v('--bg', THEME.bg);
+  THEME.text = v('--text', THEME.text);
+  THEME.surface = v('--surface-0', THEME.surface);
+  THEME.accent = v('--accent', THEME.accent);
+  THEME.amber = v('--amber', THEME.amber);
+  THEME.danger = v('--danger', THEME.danger);
+  THEME.ok = v('--ok', THEME.ok);
+  FACTION_STYLE.enemy.color = v('--enemy', FACTION_STYLE.enemy.color);
+  FACTION_STYLE.ally.color = v('--ally', FACTION_STYLE.ally.color);
+  FACTION_STYLE.neutral.color = v('--neutral', FACTION_STYLE.neutral.color);
+}
+readTheme();
+
+// Значок фракции на canvas (r — «радиус» в мировых px). Контур тёмным — читается на любом фоне.
+function drawFactionMarker(ctx, shape, cx, cy, r, color, outline) {
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  if (shape === 'triangle') {
+    ctx.moveTo(cx, cy - r);
+    ctx.lineTo(cx + r * 0.95, cy + r * 0.75);
+    ctx.lineTo(cx - r * 0.95, cy + r * 0.75);
+    ctx.closePath();
+  } else {
+    ctx.arc(cx, cy, shape === 'ring' ? r * 0.72 : r * 0.9, 0, Math.PI * 2);
+  }
+  ctx.lineWidth = outline;
+  ctx.strokeStyle = 'rgba(10, 11, 15, 0.9)';
+  if (shape === 'ring') {
+    ctx.lineWidth = r * 0.5 + outline * 2; // подложка кольца
+    ctx.stroke();
+    ctx.lineWidth = r * 0.5;
+    ctx.strokeStyle = color;
+    ctx.stroke();
+  } else {
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+  ctx.restore();
+}
 
 // Цвет рисования мастера — фиксированный, нейтральный (белый), чтобы визуально
 // отличаться от цветов персонажей (см. поле color в characters.json).
@@ -1547,11 +1603,14 @@ function createMapController({ canvas, role, myCharacterId }) {
   } else {
     window.addEventListener('resize', () => draw());
   }
+  // Подписи рисуются шрифтом интерфейса: как только он догрузится — перечитать токены и перерисовать
+  // (иначе первый кадр остался бы с запасным шрифтом).
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { readTheme(); draw(); });
 
   function draw() {
     ensureCanvasSize();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = '#0a0b0f';
+    ctx.fillStyle = THEME.bg;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     if (!currentState || !currentState.map) return;
@@ -1593,7 +1652,7 @@ function createMapController({ canvas, role, myCharacterId }) {
     if (!selectedWalking) {
       reachableCells.forEach((cost, key) => {
         const [x, y] = key.split(',').map(Number);
-        ctx.fillStyle = 'rgba(76, 175, 111, 0.1)';
+        ctx.fillStyle = 'rgba(92, 196, 141, 0.12)';
         ctx.fillRect(x * cellSize + cellInset, y * cellSize + 20 + cellInset, cellSize - cellInset * 2, cellSize - cellInset * 2);
       });
     }
@@ -1622,7 +1681,7 @@ function createMapController({ canvas, role, myCharacterId }) {
           if (fogSet.has(i + ',' + j)) ctx.rect(i * FOG_CELL, j * FOG_CELL, FOG_CELL, FOG_CELL);
         }
       }
-      ctx.fillStyle = role === 'gm' ? 'rgba(12,14,20,0.7)' : '#0a0b0f';
+      ctx.fillStyle = role === 'gm' ? 'rgba(12,14,20,0.7)' : THEME.bg;
       ctx.fill();
       if (role === 'gm') {
         ctx.beginPath();
@@ -1682,7 +1741,8 @@ function createMapController({ canvas, role, myCharacterId }) {
     // ходьбе и lift — подпрыгивание на шаге. Тело токена поднимается на lift,
     // подпись остаётся на высоте земли (не дрожит).
     // ringWidth — толщина кольца вокруг аватара (у NPC толще: цвет фракции должен читаться).
-    function drawToken(entity, pose, isSelected, fallbackColor, labelLines, isDead, ringWidth = 2) {
+    // marker — { shape, color } значок фракции NPC перед нижней строкой подписи (имя).
+    function drawToken(entity, pose, isSelected, fallbackColor, labelLines, isDead, ringWidth = 2, marker = null) {
       const cx = (pose.x + 0.5) * cellSize;
       const groundY = (pose.y + 0.5) * cellSize + 20;
       const cy = groundY - pose.lift;
@@ -1712,7 +1772,7 @@ function createMapController({ canvas, role, myCharacterId }) {
           ctx.stroke();
         }
         ctx.fillStyle = '#fff';
-        ctx.font = `bold ${cellSize * 0.3}px system-ui`;
+        ctx.font = `600 ${cellSize * 0.3}px ${THEME.font}`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(entity.name[0], cx, cy);
@@ -1723,7 +1783,7 @@ function createMapController({ canvas, role, myCharacterId }) {
       if (isDead) {
         ctx.save();
         ctx.lineWidth = Math.max(2, cellSize * 0.05) / camera.zoom;
-        ctx.strokeStyle = '#e05252';
+        ctx.strokeStyle = THEME.danger;
         ctx.beginPath();
         ctx.moveTo(cx - r * 0.7, cy - r * 0.7);
         ctx.lineTo(cx + r * 0.7, cy + r * 0.7);
@@ -1735,15 +1795,29 @@ function createMapController({ canvas, role, myCharacterId }) {
 
       // Подпись над токеном — с обводкой для читаемости на любом фоне.
       const lineHeight = cellSize * 0.325;
-      ctx.font = `bold ${cellSize * 0.275}px system-ui`;
+      const fontPx = cellSize * 0.275;
+      ctx.font = `600 ${fontPx}px ${THEME.font}`;
       ctx.textAlign = 'center';
       ctx.lineWidth = Math.max(1, cellSize * 0.075) / camera.zoom;
       ctx.strokeStyle = 'rgba(10, 11, 15, 0.85)';
-      ctx.fillStyle = '#e8e8e8';
+      ctx.fillStyle = THEME.text;
       labelLines.slice().reverse().forEach((line, i) => {
         const y = groundY - r - cellSize * 0.1 - i * lineHeight;
-        ctx.strokeText(line, cx, y);
-        ctx.fillText(line, cx, y);
+        if (marker && i === 0) {
+          // Значок фракции слева от имени; вместе они центрируются над токеном.
+          const mr = fontPx * 0.5;
+          const gap = fontPx * 0.35;
+          const textW = ctx.measureText(line).width;
+          const left = cx - (mr * 2 + gap + textW) / 2;
+          drawFactionMarker(ctx, marker.shape, left + mr, y - fontPx * 0.33, mr, marker.color, Math.max(1, cellSize * 0.05) / camera.zoom);
+          ctx.textAlign = 'left';
+          ctx.strokeText(line, left + mr * 2 + gap, y);
+          ctx.fillText(line, left + mr * 2 + gap, y);
+          ctx.textAlign = 'center';
+        } else {
+          ctx.strokeText(line, cx, y);
+          ctx.fillText(line, cx, y);
+        }
       });
     }
 
@@ -1772,7 +1846,7 @@ function createMapController({ canvas, role, myCharacterId }) {
         if (role === 'gm' && !n.visible) ctx.globalAlpha = 0.45;
         // Цвет фракции — кольцом/заливкой, значок — рядом с именем (враг/союзник/нейтрал).
         const faction = factionStyleFor(n);
-        drawToken(n, pose, isSelected, faction.color, [`${faction.icon} ${n.name}`], n.dead, 3.5);
+        drawToken(n, pose, isSelected, faction.color, [n.name], n.dead, 3.5, faction);
         ctx.globalAlpha = 1;
       });
     }
@@ -1795,7 +1869,7 @@ function createMapController({ canvas, role, myCharacterId }) {
       ctx.moveTo(ax, ay);
       ctx.lineTo(bx, by);
       ctx.stroke();
-      ctx.strokeStyle = '#ffd54a';
+      ctx.strokeStyle = THEME.amber;
       ctx.lineWidth = 3 / z;
       ctx.beginPath();
       ctx.moveTo(ax, ay);
@@ -1804,7 +1878,7 @@ function createMapController({ canvas, role, myCharacterId }) {
       [[ax, ay], [bx, by]].forEach(([px, py]) => {
         ctx.beginPath();
         ctx.arc(px, py, 5 / z, 0, Math.PI * 2);
-        ctx.fillStyle = '#ffd54a';
+        ctx.fillStyle = THEME.amber;
         ctx.fill();
         ctx.lineWidth = 1.5 / z;
         ctx.strokeStyle = 'rgba(10, 11, 15, 0.9)';
@@ -1813,13 +1887,13 @@ function createMapController({ canvas, role, myCharacterId }) {
       const text = reading.moves === 0
         ? '0'
         : `Ход ${reading.moves} · Прямая ${String(reading.straight).replace('.', ',')}`;
-      ctx.font = `bold ${13 / z}px system-ui`;
+      ctx.font = `600 ${13 / z}px ${THEME.font}`;
       const boxW = ctx.measureText(text).width + 16 / z;
       const boxH = 22 / z;
       const boxX = bx - boxW / 2;
       const boxY = by - 16 / z - boxH;
-      ctx.fillStyle = 'rgba(18, 20, 26, 0.92)';
-      ctx.strokeStyle = '#ffd54a';
+      ctx.fillStyle = THEME.surface;
+      ctx.strokeStyle = THEME.amber;
       ctx.lineWidth = 1.5 / z;
       ctx.fillRect(boxX, boxY, boxW, boxH);
       ctx.strokeRect(boxX, boxY, boxW, boxH);
@@ -1842,7 +1916,7 @@ function createMapController({ canvas, role, myCharacterId }) {
         ctx.save();
         ctx.translate(m.x, m.y);
         ctx.rotate(angle);
-        ctx.strokeStyle = m.locked ? '#d86a5a' : '#5a7bd8';
+        ctx.strokeStyle = m.locked ? THEME.danger : THEME.accent;
         ctx.lineWidth = 2 / camera.zoom;
         ctx.setLineDash([6 / camera.zoom, 4 / camera.zoom]);
         ctx.strokeRect(-w / 2, -h / 2, w, h);
@@ -1851,7 +1925,7 @@ function createMapController({ canvas, role, myCharacterId }) {
           const visualRadius = IMAGE_HANDLE_RADIUS * (lastPointerType === 'mouse' ? 1 : 1.5);
           const handleSize = (visualRadius * 2) / camera.zoom;
           ctx.save();
-          ctx.fillStyle = '#5a7bd8';
+          ctx.fillStyle = THEME.accent;
           ctx.strokeStyle = '#fff';
           ctx.lineWidth = 1.5 / camera.zoom;
           mapImageCorners(m).forEach((c) => {
@@ -1863,7 +1937,7 @@ function createMapController({ canvas, role, myCharacterId }) {
           const topCenter = { x: m.x + Math.sin(angle) * (h / 2), y: m.y - Math.cos(angle) * (h / 2) };
           const rp = rotateHandlePosition(m);
           ctx.save();
-          ctx.strokeStyle = '#5a7bd8';
+          ctx.strokeStyle = THEME.accent;
           ctx.lineWidth = 1.5 / camera.zoom;
           ctx.beginPath();
           ctx.moveTo(topCenter.x, topCenter.y);
@@ -1871,7 +1945,7 @@ function createMapController({ canvas, role, myCharacterId }) {
           ctx.stroke();
           ctx.beginPath();
           ctx.arc(rp.x, rp.y, visualRadius / camera.zoom, 0, Math.PI * 2);
-          ctx.fillStyle = '#5a7bd8';
+          ctx.fillStyle = THEME.accent;
           ctx.fill();
           ctx.strokeStyle = '#fff';
           ctx.stroke();

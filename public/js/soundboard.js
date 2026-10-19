@@ -58,8 +58,9 @@ function initSoundboard(socket, containerId, opts = {}) {
       if (canManage) {
         const delBtn = document.createElement('button');
         delBtn.className = 'small danger';
-        delBtn.textContent = '✕';
+        delBtn.appendChild(window.Icons.el('x'));
         delBtn.title = 'Удалить звук';
+        delBtn.setAttribute('aria-label', 'Удалить звук');
         delBtn.addEventListener('click', () => {
           if (confirm(`Удалить звук «${s.label || s.id}»?`)) socket.emit('sound:remove', { id: s.id });
         });

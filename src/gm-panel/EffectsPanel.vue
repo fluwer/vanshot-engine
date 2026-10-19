@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch } from 'vue';
 import { useDock } from './useDock.js';
+import Icon from './Icon.vue';
 
 // Роле-независимая панель — переиспользуется и в GM-панели, и в
 // player-panel (см. main.js обоих бандлов), как DiceLogPanel/ChatPanel.
@@ -21,12 +22,12 @@ watch(() => dock.current.value, (item) => {
 });
 
 const TYPES = [
-  { type: 'smoke', label: '💨 Дым' },
-  { type: 'fire', label: '🔥 Огонь' },
-  { type: 'firework', label: '🎆 Фейерверк' },
-  { type: 'explosion', label: '💥 Взрыв' },
-  { type: 'lightning', label: '⚡ Молния' },
-  { type: 'magic', label: '✨ Магия' },
+  { type: 'smoke', label: 'Дым', icon: 'wind' },
+  { type: 'fire', label: 'Огонь', icon: 'flame' },
+  { type: 'firework', label: 'Фейерверк', icon: 'party-popper' },
+  { type: 'explosion', label: 'Взрыв', icon: 'bomb' },
+  { type: 'lightning', label: 'Молния', icon: 'zap' },
+  { type: 'magic', label: 'Магия', icon: 'wand-sparkles' },
 ];
 
 // Режим "заряжен" — не гасится после одного клика по карте (можно ставить
@@ -50,7 +51,7 @@ function toggle(type) {
         class="fog-btn"
         :class="{ active: armed === t.type }"
         @click="toggle(t.type)"
-      >{{ t.label }}</button>
+      ><Icon :name="t.icon" /> {{ t.label }}</button>
     </div>
   </div>
 </template>

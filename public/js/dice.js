@@ -1,30 +1,76 @@
-// Единый формат строки лога/детали броска: явно подписывает, что с чем
-// складывается (иконка кубика, иконка+название атрибута, бонус решимости, DC),
-// чтобы не было непонятного "0+0+0".
-const ATTR_ICONS = { body: '💪', mind: '🧠', charisma: '💬' };
-const ATTR_LABELS = { body: 'Тело', mind: 'Разум', charisma: 'Харизма' };
+// Единый формат строки лога/детали броска: явно подписывает, что с чем складывается
+// (кубик, иконка+название атрибута, бонус решимости, DC), чтобы не было непонятного "0+0+0".
+// Строка собирается из ЧАСТЕЙ — { text } или { icon, cls } (иконки из public/js/icons.js вместо
+// эмодзи); их рисуют renderDiceParts (DOM) и DiceLogPanel.vue (v-for + <Icon>). Имена
+// бросающего вводят люди — текст всегда идёт через textContent/createTextNode, не через HTML.
 
-function formatDiceEntry(entry) {
-  const parts = [`🎲${entry.die}`];
-  if (entry.attribute) {
-    const icon = ATTR_ICONS[entry.attribute] || '🔹';
-    const label = ATTR_LABELS[entry.attribute] || entry.attribute;
-    const sign = entry.attrValue >= 0 ? '+' : '';
-    parts.push(`${icon} ${label} ${sign}${entry.attrValue}`);
-  }
-  if (entry.resolveBonus) parts.push(`✨ Решимость +${entry.resolveBonus}`);
-  const dcText = entry.dc ? ` · 🎯 DC ${entry.dc} — ${entry.success ? '✅ успех' : '❌ провал'}` : '';
-  const name = entry.dead ? `${entry.characterName} ☠` : entry.characterName; // бросок убитого — с меткой
-  return `${name}: ${parts.join(' + ')} = ${entry.total}${dcText}`;
+function attrIconName(attr) {
+  return (window.ATTR_ICONS && window.ATTR_ICONS[attr]) || 'diamond';
 }
-window.formatDiceEntry = formatDiceEntry;
+function attrLabel(attr) {
+  return (window.ATTR_LABELS && window.ATTR_LABELS[attr]) || attr;
+}
+
+// Полная строка (лог бросков и подпись кубика инициативы):
+// «Имя: [d20] 12 + [тело] Тело +2 + [✦] Решимость +1 = 15 · [цель] DC 14 — [✓] успех».
+function diceEntryParts(entry) {
+  const parts = [{ text: entry.characterName }];
+  if (entry.dead) parts.push({ icon: 'skull', cls: 'ico-dead' }); // бросок убитого — с меткой
+  parts.push({ text: ': ' }, { icon: 'd20' }, { text: ` ${entry.die}` });
+  if (entry.attribute) {
+    const sign = entry.attrValue >= 0 ? '+' : '';
+    parts.push({ text: ' + ' }, { icon: attrIconName(entry.attribute) },
+      { text: ` ${attrLabel(entry.attribute)} ${sign}${entry.attrValue}` });
+  }
+  if (entry.resolveBonus) {
+    parts.push({ text: ' + ' }, { icon: 'sparkles', cls: 'ico-amber' }, { text: ` Решимость +${entry.resolveBonus}` });
+  }
+  parts.push({ text: ` = ${entry.total}` });
+  if (entry.dc) {
+    parts.push({ text: ' · ' }, { icon: 'target' }, { text: ` DC ${entry.dc} — ` },
+      { icon: entry.success ? 'circle-check' : 'circle-x', cls: entry.success ? 'ico-ok' : 'ico-fail' },
+      { text: entry.success ? ' успех' : ' провал' });
+  }
+  return parts;
+}
+
+// Компактная строка под числом на кубике (diceFx.js): «12 [тело] +2 [✦] +1 · DC 14 [✓]».
+function diceChipParts(entry) {
+  const parts = [{ text: String(entry.die) }];
+  if (entry.attribute) {
+    const sign = entry.attrValue >= 0 ? '+' : '−';
+    parts.push({ text: ' ' }, { icon: attrIconName(entry.attribute) }, { text: ` ${sign}${Math.abs(entry.attrValue)}` });
+  }
+  if (entry.resolveBonus) parts.push({ text: ' ' }, { icon: 'sparkles', cls: 'ico-amber' }, { text: ` +${entry.resolveBonus}` });
+  if (entry.dc) {
+    parts.push({ text: ` · DC ${entry.dc} ` },
+      { icon: entry.success ? 'circle-check' : 'circle-x', cls: entry.success ? 'ico-ok' : 'ico-fail' });
+  }
+  return parts;
+}
+
+// Рисует части в DOM-узел (старое содержимое не трогает — очищайте сами).
+function renderDiceParts(parent, parts) {
+  parts.forEach((p) => {
+    if (p.icon) {
+      const el = window.Icons.el(p.icon, { cls: p.cls });
+      if (el) parent.appendChild(el);
+    } else {
+      parent.appendChild(document.createTextNode(p.text));
+    }
+  });
+}
+
+window.diceEntryParts = diceEntryParts;
+window.diceChipParts = diceChipParts;
+window.renderDiceParts = renderDiceParts;
 
 // Простая визуальная анимация броска: кубик "подкидывается" (CSS-анимация),
 // а число несколько раз мигает случайными значениями перед тем как показать
 // настоящий результат броска.
 function initDiceStage(containerEl) {
   containerEl.innerHTML = `
-    <div class="dice-cube">🎲</div>
+    <div class="dice-cube">${window.Icons.svg('d20')}</div>
     <div class="dice-number">—</div>
     <div class="dice-detail"></div>
   `;
@@ -62,7 +108,8 @@ function initDiceStage(containerEl) {
         if (entry.critical === 'success') number.classList.add('crit-success');
         if (entry.critical === 'fail') number.classList.add('crit-fail');
 
-        detail.textContent = formatDiceEntry(entry);
+        detail.textContent = '';
+        renderDiceParts(detail, diceEntryParts(entry));
         if (typeof onDone === 'function') onDone();
       }
     }, 60);

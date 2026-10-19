@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted, onUnmounted } from 'vue';
+import Icon from './Icon.vue';
 
 const emit = defineEmits(['close']);
 
@@ -17,7 +18,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown));
       <div class="card modal-dialog">
         <div class="modal-dialog-head">
           <h2><slot name="title"></slot></h2>
-          <button class="small" @click="emit('close')">✕</button>
+          <button class="small" title="Закрыть" aria-label="Закрыть" @click="emit('close')"><Icon name="x" /></button>
         </div>
         <slot></slot>
       </div>

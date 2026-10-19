@@ -84,7 +84,7 @@ function submit() {
       </div>
     </div>
     <div class="form-actions">
-      <button @click="submit">Добавить</button>
+      <button class="primary" @click="submit">Добавить</button>
       <button @click="emit('cancel')">Отмена</button>
     </div>
   </div>

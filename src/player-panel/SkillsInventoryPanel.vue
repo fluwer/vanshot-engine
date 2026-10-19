@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue';
+import Icon from '../gm-panel/Icon.vue';
 
 const props = defineProps({
   store: { type: Object, required: true },
@@ -18,7 +19,7 @@ function skillInfo(skill) {
     <h3>Навыки</h3>
     <div class="skills-list">
       <div v-for="skill in character.skills || []" :key="skill" class="skill-row">
-        <span class="skill-icon">{{ skillInfo(skill).icon }}</span>
+        <span class="skill-icon"><Icon :name="skillInfo(skill).icon" /></span>
         <div>
           <div class="skill-name">{{ skill }}</div>
           <div class="skill-desc muted">{{ skillInfo(skill).description }}</div>

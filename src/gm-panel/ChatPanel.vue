@@ -24,7 +24,7 @@ onMounted(() => {
   <form class="chat-form" id="chat-form">
     <div class="chat-suggest" id="chat-suggest"></div>
     <input id="chat-input" class="chat-input" placeholder="Сообщение…" maxlength="300" autocomplete="off">
-    <button type="submit" class="small">Отправить</button>
+    <button type="submit" class="small primary">Отправить</button>
     <button v-if="gmControls" type="button" class="small" @click="bridge.socket.emit('chat:clear')">Очистить</button>
   </form>
 </template>

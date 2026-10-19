@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue';
+import Icon from '../gm-panel/Icon.vue';
 
 defineProps({
   store: { type: Object, required: true },
@@ -30,13 +31,13 @@ function toggle() {
   <div class="party-card">
     <button type="button" class="party-card-head" :title="collapsed ? 'Показать отряд' : 'Свернуть отряд'" @click="toggle">
       <span>Отряд</span>
-      <span>{{ collapsed ? '▸' : '▾' }}</span>
+      <Icon :name="collapsed ? 'chevron-right' : 'chevron-down'" />
     </button>
     <template v-if="!collapsed">
       <div v-for="c in store.characters" :key="c.id" class="party-row">
         <span>{{ c.name }}</span>
-        <span class="stat-icon">❤ {{ c.hp.current }}/{{ c.hp.max }}</span>
-        <span class="stat-icon">⚡ {{ c.energy.current }}/{{ c.energy.max }}</span>
+        <span class="stat-icon"><Icon name="heart" class="ico-hp" /> {{ c.hp.current }}/{{ c.hp.max }}</span>
+        <span class="stat-icon"><Icon name="zap" class="ico-energy" /> {{ c.energy.current }}/{{ c.energy.max }}</span>
       </div>
     </template>
   </div>
