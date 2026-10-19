@@ -34,7 +34,8 @@ applyEditMode(activeEditMode.value, null);
 // ---- Туман войны ----
 const fogTool = ref('brush');
 const fogHide = ref(true);
-const fogBrush = ref(2);
+const fogBrush = ref(3); // сторона квадрата в клетках (1…12); в map.js это значение по умолчанию
+props.bridge.mapController.setFogBrush(fogBrush.value);
 function setFogTool(tool) {
   fogTool.value = tool;
   props.bridge.mapController.setFogTool(tool);
@@ -274,7 +275,7 @@ function removeLocation(locationId) {
   <!-- Вкладок нет: пункт выбирается в левой панели (Dock), см. activeTab выше. -->
   <div class="overlay-body">
     <div class="tab-pane tab-pane-flex" :class="{ active: activeTab === 'tab-fog' }">
-      <p class="muted small fog-hint">Закрашивайте карту — игроки видят закрашенное чёрным. Пока блок открыт, фишки не выбираются.</p>
+      <p class="muted small fog-hint">Закрашивайте клетки сетки — игроки видят закрашенное чёрным. Пока блок открыт, фишки не выбираются.</p>
       <div class="fog-group">
         <div class="row" style="gap:4px">
           <button class="fog-btn fog-tool" :class="{ active: fogTool === 'brush' }" title="Кисть" @click="setFogTool('brush')"><Icon name="brush" /> Кисть</button>
@@ -289,8 +290,8 @@ function removeLocation(locationId) {
         </div>
       </div>
       <div class="fog-group">
-        <span class="fog-label">Размер кисти: <span>{{ fogBrush }}</span></span>
-        <input type="range" min="0" max="8" v-model="fogBrush" @input="onFogBrushInput">
+        <span class="fog-label">Размер кисти: <span>{{ fogBrush }}×{{ fogBrush }}</span></span>
+        <input type="range" min="1" max="12" v-model="fogBrush" @input="onFogBrushInput">
       </div>
       <div class="row" style="gap:4px">
         <button class="fog-btn" @click="hideAllFog">Скрыть всё</button>

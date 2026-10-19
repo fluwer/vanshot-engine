@@ -92,12 +92,14 @@ const ZOOM_MIN = 0.6;
 const ZOOM_MAX = 3;
 const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
 
-// Размер клетки тумана войны в мировых пикселях. Туман не привязан к какому-либо
-// прямоугольнику — клетки адресуются абсолютными мировыми индексами (i,j),
-// сервер геометрию не знает — только хранит blob-строку (список закрытых клеток).
-const FOG_CELL = 24;
-const FOG_HATCH_TILE = 8; // делит FOG_CELL нацело (24/8=3) — плитка узора без обрезков
-const FOG_FRAME_PAD = FOG_CELL * 4; // запас вокруг картинок/поезда при «Скрыть всё»
+// Туман войны красит клетки сетки игры: ключ клетки «x,y» — тот же индекс, что у
+// position токенов и у линейки (cellFromCanvasPoint), размер клетки и сдвиг сетки
+// по Y берутся оттуда же. Туман не привязан к какому-либо прямоугольнику — клетки
+// адресуются абсолютными индексами; сервер геометрию не знает, только хранит
+// blob-строку (формат v2, см. getFogBlob).
+const FOG_HATCH_TILE = 8; // плитка штриховки; делит cellSize (16) нацело — узор без обрезков
+const FOG_FRAME_PAD_CELLS = 4; // запас (в клетках) вокруг картинок/комнат при «Скрыть всё»
+const FOG_MAX_CELLS = 400000;  // предел клеток в одном blob при разборе (защита от мусора)
 const CAMERA_CONTENT_MARGIN = 800;  // запас (мировые px) вокруг содержимого карты, за который камера не уезжает
 
 // Анимация ходьбы токена (чисто клиентская: сервер двигает токен мгновенно,
@@ -167,12 +169,14 @@ function createMapController({ canvas, role, myCharacterId }) {
   // --- Туман войны -------------------------------------------------------
   // Источник правды: Uint8Array(cols*rows), 1 = скрыто/чёрное, 0 = видно.
   // По умолчанию всё 0 ⇒ карта видна целиком, ГМ сам закрашивает зоны.
-  let fogSet = new Set();      // абсолютные мировые клетки тумана ("i,j" → скрыта), без привязки к рамке
+  let fogSet = new Set();      // скрытые клетки сетки ("x,y"), без привязки к рамке
   let fogEdit = false;
   let fogTool = 'brush';       // 'brush' | 'zone'
   let fogHide = true;          // true = скрыть (красим чёрным), false = открыть
-  let fogBrush = 2;            // радиус кисти в клетках тумана
+  let fogBrush = 3;            // сторона квадратной кисти в клетках (1 = одна клетка)
   let fogSelection = null;     // { x0,y0,x1,y1 } мировой прямоугольник при зоне
+  let fogHoverPt = null;       // точка указателя на канвасе (px) — по ней рисуется рамка клеток под кистью
+  let fogHoverCells = null;    // { i0,j0,i1,j1 } клетки рамки в последнем draw() (чтобы не перерисовывать зря)
   let fogPainting = false;
   let fogChangeHandler = null;
 
@@ -829,11 +833,12 @@ function createMapController({ canvas, role, myCharacterId }) {
       maxX = Math.max(maxX, m.x + w / 2);
       maxY = Math.max(maxY, m.y + h / 2);
     });
+    const pad = FOG_FRAME_PAD_CELLS * currentState.map.cellSize;
     return {
-      drawX: minX - FOG_FRAME_PAD,
-      drawY: minY - FOG_FRAME_PAD,
-      drawWidth: (maxX - minX) + FOG_FRAME_PAD * 2,
-      drawHeight: (maxY - minY) + FOG_FRAME_PAD * 2,
+      drawX: minX - pad,
+      drawY: minY - pad,
+      drawWidth: (maxX - minX) + pad * 2,
+      drawHeight: (maxY - minY) + pad * 2,
     };
   }
 
@@ -860,21 +865,36 @@ function createMapController({ canvas, role, myCharacterId }) {
     return fogHatchPattern;
   }
 
-  // Клетка тумана по мировым координатам — абсолютная, без привязки к рамке.
-  function worldToFogCell(wx, wy) {
-    return { i: Math.floor(wx / FOG_CELL), j: Math.floor(wy / FOG_CELL) };
+  // Мировая точка → клетка сетки игры (абсолютный индекс, тот же, что у position
+  // токенов): клетка (x,y) занимает x*cellSize … , y*cellSize + 20 … (см. drawGrid).
+  function worldToCell(wx, wy) {
+    const cellSize = currentState.map.cellSize;
+    return { x: Math.floor(wx / cellSize), y: Math.floor((wy - 20) / cellSize) };
+  }
+
+  const fogKey = (x, y) => x + ',' + y;
+
+  // Клетки по мировому прямоугольнику (границы включительно). Нужны «Скрыть всё»
+  // и зоне: и то и другое красит все клетки, которых прямоугольник касается.
+  function worldRectToCells(x0, y0, x1, y1) {
+    const a = worldToCell(Math.min(x0, x1), Math.min(y0, y1));
+    const b = worldToCell(Math.max(x0, x1), Math.max(y0, y1));
+    return { i0: a.x, j0: a.y, i1: b.x, j1: b.y };
+  }
+
+  // Красит (hide) или открывает клетки прямоугольника { i0,j0,i1,j1 } (включительно).
+  function paintCells(c, hide) {
+    for (let j = c.j0; j <= c.j1; j++) {
+      for (let i = c.i0; i <= c.i1; i++) {
+        if (hide) fogSet.add(fogKey(i, j)); else fogSet.delete(fogKey(i, j));
+      }
+    }
   }
 
   // Заливает все клетки тумана внутри мирового прямоугольника (используется
   // только «Скрыть всё» — см. getKnownMapBounds).
   function fillFogRect(rect) {
-    const i0 = Math.floor(rect.drawX / FOG_CELL);
-    const j0 = Math.floor(rect.drawY / FOG_CELL);
-    const i1 = Math.floor((rect.drawX + rect.drawWidth) / FOG_CELL);
-    const j1 = Math.floor((rect.drawY + rect.drawHeight) / FOG_CELL);
-    for (let j = j0; j <= j1; j++) {
-      for (let i = i0; i <= i1; i++) fogSet.add(i + ',' + j);
-    }
+    paintCells(worldRectToCells(rect.drawX, rect.drawY, rect.drawX + rect.drawWidth, rect.drawY + rect.drawHeight), true);
   }
 
   // Едва заметная фоновая сетка клеток — видна и ГМ, и игрокам: помогает
@@ -912,22 +932,55 @@ function createMapController({ canvas, role, myCharacterId }) {
     ctx.restore();
   }
 
+  // Формат blob v2: {"v":2,"runs":[[y,x0,x1],…]} — подряд идущие скрытые клетки
+  // строки y одним отрезком x0…x1. Список «x,y» раздувал бы blob (сервер молча
+  // отбрасывает всё больше FOG_MAX_SIZE), а «Скрыть всё» красит тысячи клеток.
   function getFogBlob() {
-    // Всегда возвращаем валидную строку (даже пустой массив '[]'), а не null —
+    // Всегда возвращаем валидную строку (даже пустой набор), а не null —
     // setFog() на сервере (typeof blob !== 'string') молча отбрасывает null,
     // из-за чего "Открыть все" не персистилось и туман возвращался после
     // перезагрузки страницы.
-    return JSON.stringify(Array.from(fogSet));
+    const rows = new Map(); // y → [x…]
+    fogSet.forEach((key) => {
+      const [x, y] = key.split(',').map(Number);
+      if (!rows.has(y)) rows.set(y, []);
+      rows.get(y).push(x);
+    });
+    const runs = [];
+    Array.from(rows.keys()).sort((a, b) => a - b).forEach((y) => {
+      const xs = rows.get(y).sort((a, b) => a - b);
+      let start = xs[0];
+      let prev = xs[0];
+      for (let k = 1; k < xs.length; k++) {
+        if (xs[k] === prev + 1) { prev = xs[k]; continue; }
+        runs.push([y, start, prev]);
+        start = xs[k];
+        prev = xs[k];
+      }
+      runs.push([y, start, prev]);
+    });
+    return JSON.stringify({ v: 2, runs });
   }
 
   function applyFogBlob(blob) {
     fogSet.clear();
     if (blob) {
       try {
-        const arr = JSON.parse(blob);
-        if (Array.isArray(arr)) arr.forEach((key) => fogSet.add(key));
+        const data = JSON.parse(blob);
+        if (data && data.v === 2 && Array.isArray(data.runs)) {
+          let total = 0;
+          for (const run of data.runs) {
+            if (!Array.isArray(run)) continue;
+            const [y, x0, x1] = run;
+            if (!Number.isInteger(y) || !Number.isInteger(x0) || !Number.isInteger(x1) || x1 < x0) continue;
+            total += x1 - x0 + 1;
+            if (total > FOG_MAX_CELLS) break;
+            for (let x = x0; x <= x1; x++) fogSet.add(fogKey(x, y));
+          }
+        }
       } catch (e) {
-        // Старый формат («colsxrows:base64») больше не поддерживается — просто сбрасываем туман.
+        // Не JSON — как и прежние форматы («colsxrows:base64», массив «i,j» на сетке 24 px),
+        // не читаем: туман просто сбрасывается.
       }
     }
     draw();
@@ -936,33 +989,55 @@ function createMapController({ canvas, role, myCharacterId }) {
   // Проверяет, скрыта ли мировая точка текущим туманом (для игрока).
   function isPositionFogged(wx, wy) {
     if (!fogSet.size) return false;
-    const cell = worldToFogCell(wx, wy);
-    return fogSet.has(cell.i + ',' + cell.j);
+    const cell = worldToCell(wx, wy);
+    return fogSet.has(fogKey(cell.x, cell.y));
+  }
+
+  // Клетки под квадратной кистью fogBrush×fogBrush, выровненной по сетке: нечётная
+  // центрируется на клетке под указателем, чётная — на ближайшем узле сетки.
+  // Единственный источник правды и для закраски, и для рамки-предпросмотра.
+  function brushFootprint(sx, sy) {
+    if (!currentState) return null;
+    const cellSize = currentState.map.cellSize;
+    const world = screenToWorld(sx, sy);
+    const n = fogBrush;
+    const start = (g) => (n % 2 ? Math.floor(g) - (n - 1) / 2 : Math.round(g) - n / 2);
+    const i0 = start(world.x / cellSize);
+    const j0 = start((world.y - 20) / cellSize);
+    return { i0, j0, i1: i0 + n - 1, j1: j0 + n - 1 };
+  }
+
+  // Рамка клеток под кистью видна ГМ, пока мышь над картой в режиме «Кисть».
+  function brushPreviewActive() {
+    return role === 'gm' && fogEdit && fogTool === 'brush';
+  }
+
+  const sameCells = (a, b) => (!a && !b) || !!(a && b && a.i0 === b.i0 && a.j0 === b.j0 && a.i1 === b.i1 && a.j1 === b.j1);
+
+  // Указатель переместился (pt в px канваса) или ушёл с карты (null): перерисовываем,
+  // только если рамка сменила клетки.
+  function setFogHoverPoint(pt) {
+    fogHoverPt = pt;
+    const next = pt && brushPreviewActive() ? brushFootprint(pt.x, pt.y) : null;
+    if (!sameCells(next, fogHoverCells)) draw();
   }
 
   function paintBrushAt(sx, sy) {
-    const world = screenToWorld(sx, sy);
-    const cell = worldToFogCell(world.x, world.y);
-    const r = fogBrush;
-    for (let dj = -r; dj <= r; dj++) {
-      for (let di = -r; di <= r; di++) {
-        if (di * di + dj * dj > r * r) continue;
-        const key = (cell.i + di) + ',' + (cell.j + dj);
-        if (fogHide) fogSet.add(key); else fogSet.delete(key);
-      }
-    }
+    const cells = brushFootprint(sx, sy);
+    if (!cells) return;
+    paintCells(cells, fogHide);
+    fogHoverPt = { x: sx, y: sy };
     draw();
   }
 
-  function applyZone(rect) {
-    const c0 = worldToFogCell(Math.min(rect.x0, rect.x1), Math.min(rect.y0, rect.y1));
-    const c1 = worldToFogCell(Math.max(rect.x0, rect.x1), Math.max(rect.y0, rect.y1));
-    for (let j = c0.j; j <= c1.j; j++) {
-      for (let i = c0.i; i <= c1.i; i++) {
-        const key = i + ',' + j;
-        if (fogHide) fogSet.add(key); else fogSet.delete(key);
-      }
-    }
+  // Клетки зоны: все, которых касается прямоугольник жеста. Та же функция рисует
+  // маркизу, поэтому видимая рамка = закрашиваемое.
+  function zoneCells(sel) {
+    return worldRectToCells(sel.x0, sel.y0, sel.x1, sel.y1);
+  }
+
+  function applyZone(sel) {
+    paintCells(zoneCells(sel), fogHide);
     draw();
   }
   // -----------------------------------------------------------------------
@@ -1130,9 +1205,8 @@ function createMapController({ canvas, role, myCharacterId }) {
 
   function cellFromCanvasPoint(sx, sy) {
     if (!currentState) return null;
-    const cellSize = currentState.map.cellSize;
     const world = screenToWorld(sx, sy);
-    return { x: Math.floor(world.x / cellSize), y: Math.floor((world.y - 20) / cellSize) };
+    return worldToCell(world.x, world.y);
   }
 
   // Убитый персонаж игрока сам не ходит (сервер тоже отклонит: moveCharacter,
@@ -1254,6 +1328,12 @@ function createMapController({ canvas, role, myCharacterId }) {
     const pt = eventToCanvasPoint(e);
     lastHoverPoint = pt;
     canvas.style.cursor = cursorForHover(pt.x, pt.y);
+    setFogHoverPoint(pt);
+  });
+
+  canvas.addEventListener('mouseleave', () => {
+    if (activePointers.size > 0) return; // жест с захватом указателя продолжается и за краем карты
+    setFogHoverPoint(null);
   });
 
   canvas.addEventListener('pointerdown', (e) => {
@@ -1389,6 +1469,8 @@ function createMapController({ canvas, role, myCharacterId }) {
   canvas.addEventListener('pointermove', (e) => {
     if (!activePointers.has(e.pointerId)) return;
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    // Рамка кисти следует за мышью и во время панорамирования (hover-обработчик на нажатой кнопке молчит).
+    if (fogHoverPt && e.pointerType === 'mouse') fogHoverPt = eventToCanvasPoint(e);
 
     if (rulerDragging) {
       const pt = eventToCanvasPoint(e);
@@ -1535,6 +1617,7 @@ function createMapController({ canvas, role, myCharacterId }) {
         fogSelection = null;
       }
       fogPainting = false;
+      fogHoverPt = e.pointerType === 'mouse' ? pt : null; // у тача после отпускания рамка не нужна
       activePointers.delete(e.pointerId);
       if (fogChangeHandler) fogChangeHandler(getFogBlob());
       draw();
@@ -1666,32 +1749,28 @@ function createMapController({ canvas, role, myCharacterId }) {
     // Туман не привязан ни к какому прямоугольнику — рисуем только клетки,
     // попавшие в видимую область экрана (в мировых координатах).
     if (fogSet.size) {
+      const fogCell = currentState.map.cellSize;
       const viewMin = screenToWorld(0, 0);
       const viewMax = screenToWorld(canvas.width, canvas.height);
-      const i0 = Math.floor(viewMin.x / FOG_CELL) - 1;
-      const j0 = Math.floor(viewMin.y / FOG_CELL) - 1;
-      const i1 = Math.floor(viewMax.x / FOG_CELL) + 1;
-      const j1 = Math.floor(viewMax.y / FOG_CELL) + 1;
-      // Клетки красим одним path'ом (rect+fill), а не отдельными fillRect —
+      const i0 = Math.floor(viewMin.x / fogCell) - 1;
+      const j0 = Math.floor((viewMin.y - 20) / fogCell) - 1;
+      const i1 = Math.floor(viewMax.x / fogCell) + 1;
+      const j1 = Math.floor((viewMax.y - 20) / fogCell) + 1;
+      // Клетки собираем одним path'ом (rect+fill), а не отдельными fillRect —
       // иначе на стыках соседних клеток при дробном зуме остаются тонкие
       // щели (каждый fillRect сглаживается по краю независимо от соседа).
-      ctx.beginPath();
+      // Те же клетки, что и в сетке: (i,j) → i*cellSize, j*cellSize + 20.
+      const fogPath = new Path2D();
       for (let j = j0; j <= j1; j++) {
         for (let i = i0; i <= i1; i++) {
-          if (fogSet.has(i + ',' + j)) ctx.rect(i * FOG_CELL, j * FOG_CELL, FOG_CELL, FOG_CELL);
+          if (fogSet.has(fogKey(i, j))) fogPath.rect(i * fogCell, j * fogCell + 20, fogCell, fogCell);
         }
       }
       ctx.fillStyle = role === 'gm' ? 'rgba(12,14,20,0.7)' : THEME.bg;
-      ctx.fill();
+      ctx.fill(fogPath);
       if (role === 'gm') {
-        ctx.beginPath();
-        for (let j = j0; j <= j1; j++) {
-          for (let i = i0; i <= i1; i++) {
-            if (fogSet.has(i + ',' + j)) ctx.rect(i * FOG_CELL, j * FOG_CELL, FOG_CELL, FOG_CELL);
-          }
-        }
         ctx.fillStyle = getFogHatchPattern(ctx);
-        ctx.fill();
+        ctx.fill(fogPath);
       }
     }
 
@@ -1954,16 +2033,22 @@ function createMapController({ canvas, role, myCharacterId }) {
       }
     }
 
-    // Маркиза выделения зоны тумана (пунктир) — только пока ГМ тянет прямоугольник.
-    if (fogSelection) {
-      const x = Math.min(fogSelection.x0, fogSelection.x1);
-      const y = Math.min(fogSelection.y0, fogSelection.y1);
-      const w = Math.abs(fogSelection.x1 - fogSelection.x0);
-      const h = Math.abs(fogSelection.y1 - fogSelection.y0);
+    // Маркиза зоны тумана (пунктир, пока ГМ тянет прямоугольник) и рамка клеток под
+    // кистью — обе по клеткам сетки, ровно по тому, что будет закрашено.
+    fogHoverCells = fogHoverPt && brushPreviewActive() ? brushFootprint(fogHoverPt.x, fogHoverPt.y) : null;
+    const fogMarks = fogSelection ? zoneCells(fogSelection) : fogHoverCells;
+    if (fogMarks) {
+      const cs = currentState.map.cellSize;
+      const x = fogMarks.i0 * cs;
+      const y = fogMarks.j0 * cs + 20;
+      const w = (fogMarks.i1 - fogMarks.i0 + 1) * cs;
+      const h = (fogMarks.j1 - fogMarks.j0 + 1) * cs;
       ctx.save();
+      ctx.fillStyle = fogHide ? 'rgba(255,90,90,0.16)' : 'rgba(120,200,255,0.16)';
+      ctx.fillRect(x, y, w, h);
       ctx.strokeStyle = fogHide ? 'rgba(255,90,90,0.95)' : 'rgba(120,200,255,0.95)';
       ctx.lineWidth = 2 / camera.zoom;
-      ctx.setLineDash([6 / camera.zoom, 4 / camera.zoom]);
+      if (fogSelection) ctx.setLineDash([6 / camera.zoom, 4 / camera.zoom]);
       ctx.strokeRect(x, y, w, h);
       ctx.restore();
     }
@@ -1984,10 +2069,11 @@ function createMapController({ canvas, role, myCharacterId }) {
     getSelectedTarget: () => selectedTarget,
     // Включение любого режима карты (туман/картинки/рисование/эффекты) сбрасывает
     // выбор ГМ: иначе забытый выбранный токен можно случайно сдвинуть тапом.
-    setFogEditMode: (v) => { fogEdit = !!v; if (fogEdit && role === 'gm') clearSelection(); if (!fogEdit) { fogSelection = null; fogPainting = false; } draw(); if (lastHoverPoint) canvas.style.cursor = cursorForHover(lastHoverPoint.x, lastHoverPoint.y); },
-    setFogTool: (t) => { fogTool = t === 'zone' ? 'zone' : 'brush'; },
+    setFogEditMode: (v) => { fogEdit = !!v; if (fogEdit && role === 'gm') clearSelection(); if (!fogEdit) { fogSelection = null; fogPainting = false; fogHoverPt = null; } draw(); if (lastHoverPoint) canvas.style.cursor = cursorForHover(lastHoverPoint.x, lastHoverPoint.y); },
+    setFogTool: (t) => { fogTool = t === 'zone' ? 'zone' : 'brush'; draw(); },
     setFogHide: (v) => { fogHide = !!v; },
-    setFogBrush: (n) => { fogBrush = Math.max(0, Math.round(n)); },
+    // Размер кисти — сторона квадрата в клетках, минимум 1 (кисть всегда красит хотя бы клетку).
+    setFogBrush: (n) => { fogBrush = Math.max(1, Math.round(n) || 1); if (fogHoverPt) draw(); },
     revealAllFog: () => { fogSet.clear(); draw(); if (fogChangeHandler) fogChangeHandler(getFogBlob()); },
     hideAllFog: () => { const b = getKnownMapBounds(); if (b) fillFogRect(b); draw(); if (fogChangeHandler) fogChangeHandler(getFogBlob()); },
     applyFogBlob,
