@@ -148,6 +148,7 @@ Dock.init({
     { id: 'locations', icon: 'map', label: 'Локации', title: 'Локации', block: 'maptools-panel', group: 1 },
     { id: 'combat', icon: 'swords', label: 'Бой', title: 'Бой', block: 'combat-panel', group: 1 },
     { id: 'sound', icon: 'volume-2', label: 'Звук', title: 'Звук', block: 'sound-panel', group: 1 },
+    { id: 'video', icon: 'clapperboard', label: 'Ролики', title: 'Ролики', block: 'video-panel', group: 1 },
     { id: 'game', icon: 'sliders-horizontal', label: 'Игра', title: 'Настройки игры', block: 'game-panel', group: 1 },
   ],
   side: { id: 'characters-panel', title: 'Участники' },
@@ -163,8 +164,13 @@ function requestReachable() {
   socket.emit('reachable', { characterId: target.id }, (cells) => mapController.setReachable(cells));
 }
 
+// Окно показа роликов (public/js/videofx.js): у ГМ в рамке есть значок «стоп».
+window.videoFx.init({ gm: true, onStop: () => socket.emit('video:stop') });
+
 socket.on('state', (state) => {
   window.Game.update(state.game); // настройки игры (название, тема, подписи) — раньше всех, остальное их читает
+  window.videoFx.onState(state.video); // идущий ролик: окно с рамкой, как у игроков
+  window.videoPanelApp?.updateState(state.videos || [], state.video);
   window.dcControlsPanelApp?.updateState(state.currentDc);
   window.locationBadgeApp?.updateState(state.activeLocationName);
   window.charactersPanelApp?.updateState(state.characters, state.npcs, state.skillsCatalog, state.locations);

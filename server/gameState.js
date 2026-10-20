@@ -3,6 +3,7 @@ const path = require('path');
 const map = require('./map');
 const config = require('./config');
 const gameConfig = require('./gameConfig');
+const videos = require('./videos');
 const { writeFileAtomic } = require('./fsutil');
 
 const DATA_DIR = path.join(__dirname, 'data');
@@ -344,6 +345,9 @@ const state = {
   // Погода на экране: одна на всю игру (не по локациям), задаёт ГМ — setWeather.
   // Рисует клиент (public/js/weather.js), сервер только хранит и раздаёт.
   weather: normalizeWeather(initialRuntime && initialRuntime.weather),
+  // Показ ролика: { playId, id, startedAt } | null. Это событие, а не состояние партии — в runtime.json не пишется
+  // (после перезапуска сервера показ не продолжается).
+  video: null,
 };
 
 // Все персонажи стартуют по центру активной локации (пустая сетка без
@@ -2141,6 +2145,51 @@ function persistRuntimeState() {
   }
 }
 
+// ---- Ролики: показ (библиотека и загрузка файлов — server/videos.js) ---------------------------------------
+// state.video = { playId, id, startedAt }. playId уникален для каждого запуска: тот же ролик, запущенный
+// повторно, начинается у клиентов заново, а переподключение с прежним playId ничего не перезапускает.
+let videoPlaySeq = 0;
+
+function playVideo(id) {
+  const entry = typeof id === 'string' ? videos.get(id) : null;
+  if (!entry) return { ok: false, reason: 'not-found' };
+  videoPlaySeq += 1;
+  state.video = { playId: `${Date.now().toString(36)}-${videoPlaySeq}`, id: entry.id, startedAt: Date.now() };
+  return { ok: true, duration: entry.duration };
+}
+
+function stopVideo() {
+  const had = !!state.video;
+  state.video = null;
+  return had;
+}
+
+// Ролик удаляют из библиотеки — если он как раз идёт, показ останавливается.
+function removeVideo(id) {
+  const wasPlaying = !!(state.video && state.video.id === id);
+  if (wasPlaying) state.video = null;
+  return { ok: typeof id === 'string' && videos.remove(id), wasPlaying };
+}
+
+// Показ для клиентов: elapsed (секунды с начала) считает сервер в момент рассылки — у клиентов часы разные, а
+// вошедший посреди ролика или переподключившийся должен начать с нужного места. Доиграл (+ запас) — показ снимается.
+function publicVideo() {
+  const v = state.video;
+  if (!v) return null;
+  const entry = videos.get(v.id);
+  if (!entry) { state.video = null; return null; }
+  const elapsed = (Date.now() - v.startedAt) / 1000;
+  if (entry.duration > 0 && elapsed > entry.duration + config.VIDEO_END_GRACE_MS / 1000) { state.video = null; return null; }
+  return { playId: v.playId, id: v.id, url: `/assets/video/${entry.file}`, elapsed: Math.round(elapsed * 100) / 100, duration: entry.duration };
+}
+
+// Таймер в index.js зовёт это по окончании ролика: true — показ снят, надо разослать state.
+function expireVideo() {
+  const had = !!state.video;
+  publicVideo();
+  return had && !state.video;
+}
+
 // ---- Скрытое имя NPC: маска для игроков ------------------------------------
 // Настоящее имя остаётся в данных (и у ГМ); игрокам вместо него — gameConfig.get().hiddenName.
 // Маска накладывается при выдаче, поэтому снятие галочки сразу возвращает имя везде, в том
@@ -2199,6 +2248,8 @@ function getPublicState() {
     music: state.music,
     // Погода — общая для всех и для всех локаций; личный выключатель у каждого клиента свой.
     weather: state.weather,
+    // Идущий ролик (или null): общее окно показа у всех, см. public/js/videofx.js.
+    video: publicVideo(),
     // Игрокам видны только NPC активной локации, которых мастер явно сделал
     // видимыми — и то без notes/secret: это заметки только для ГМ (см.
     // NpcInfoDialog.vue, поля «Заметки»/«Секрет»), их не фильтровали по
@@ -2221,6 +2272,8 @@ function getGMState() {
     npcs,
     // Полный список локаций — для панели переключения/управления.
     locations,
+    // Библиотека роликов — только ГМ (панель «Ролики»); игрокам нужен лишь идущий ролик (video выше).
+    videos: videos.list(),
   };
 }
 
@@ -2250,8 +2303,13 @@ module.exports = {
   resetSfx,
   saveSkill,
   removeSkill,
+  playVideo,
+  stopVideo,
+  removeVideo,
+  expireVideo,
   // каталоги в data/ (volume Docker), которые index.js отдаёт под прежними адресами
   storagePaths: {
+    video: videos.VIDEO_DIR,
     avatarUploads: UPLOADS_DIR,
     mapImages: MAP_IMAGES_DIR,
     presets: USER_PRESETS_DIR,

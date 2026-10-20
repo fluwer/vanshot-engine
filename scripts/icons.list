@@ -254,6 +254,10 @@ laugh
 circle-alert
 triangle-alert
 
+# --- ролики (панель «Ролики», окно показа)
+clapperboard
+volume-x
+
 # --- интерфейс (экран «Игра» и прочее)
 minus
 settings

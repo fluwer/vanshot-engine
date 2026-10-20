@@ -15,12 +15,29 @@ function clamp01(v) {
   return Math.max(0, Math.min(1, v));
 }
 
+// Громкость, которую выбрал сам пользователь (ползунок, localStorage), и «приглушение»: пока идёт окно ролика
+// (public/js/videofx.js) музыка тише в musicDuck раз; после — возвращается. Ползунок всегда правит базовую.
+let musicBaseVolume = 0.5;
+let musicDuck = 1;
+
+function applyMusicVolume() {
+  if (musicAudio) musicAudio.volume = clamp01(musicBaseVolume * musicDuck);
+}
+
+function setMusicDuck(k) {
+  musicDuck = clamp01(Number(k));
+  applyMusicVolume();
+}
+
 function getMusicAudio() {
   if (!musicAudio) {
     musicAudio = new Audio();
     musicAudio.loop = true;
-    const saved = Number(localStorage.getItem('musicVolume'));
-    musicAudio.volume = Number.isFinite(saved) ? clamp01(saved / 100) : 0.5;
+    // Number(null) === 0: без проверки на null у нового посетителя (ничего ещё не сохранено) музыка стартовала бы с нуля.
+    const raw = localStorage.getItem('musicVolume');
+    const saved = raw === null ? NaN : Number(raw);
+    musicBaseVolume = Number.isFinite(saved) ? clamp01(saved / 100) : 0.5;
+    applyMusicVolume();
   }
   return musicAudio;
 }
@@ -75,12 +92,13 @@ function initMusicPlayer(socket, opts) {
   const volumeInput = volumeId ? document.getElementById(volumeId) : null;
   const volumeValueEl = volumeValueId ? document.getElementById(volumeValueId) : null;
   if (volumeInput) {
-    const initial = Math.round(audio.volume * 100);
+    const initial = Math.round(musicBaseVolume * 100);
     volumeInput.value = String(initial);
     if (volumeValueEl) volumeValueEl.textContent = String(initial);
     volumeInput.addEventListener('input', () => {
       const v = Number(volumeInput.value);
-      audio.volume = clamp01(v / 100);
+      musicBaseVolume = clamp01(v / 100);
+      applyMusicVolume();
       if (volumeValueEl) volumeValueEl.textContent = String(v);
       localStorage.setItem('musicVolume', String(v));
     });
@@ -155,3 +173,5 @@ function initMusicPlayer(socket, opts) {
 
 window.initMusicPlayer = initMusicPlayer;
 window.applyMusicState = applyMusicState;
+window.setMusicDuck = setMusicDuck;
+window.getMusicVolume = () => (musicAudio ? musicAudio.volume : null); // для проверок: фактическая громкость с приглушением

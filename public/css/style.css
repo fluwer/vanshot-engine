@@ -830,3 +830,77 @@ select.fog-btn { padding: 4px 28px 4px 8px; }
 .icon-picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(34px, 1fr)); gap: 3px; max-height: 176px; overflow-y: auto; }
 .icon-picker-cell { display: flex; align-items: center; justify-content: center; padding: 6px 0; }
 .icon-picker-cell.active { background: var(--accent-bg); border-color: var(--accent-line); color: var(--accent); }
+
+/* ---- Окно показа роликов (public/js/videofx.js): общее у ГМ и игроков, без подписей, не на весь экран ----
+   Цвета — только токены темы игры (--accent*, --line*, --surface*), поэтому смена темы в «Игре» красит и окно.
+   z-index 11: над кубиками (8) и блоками (7), под инициативой (12) и заставкой локации (14). */
+.video-layer {
+  position: absolute; inset: 0; z-index: 11; display: flex; align-items: center; justify-content: center;
+  /* поля: не наезжать на чип локации сверху, нижнюю панель, правую колонку ГМ и открытый блок слева —
+     окно встаёт по центру СВОБОДНОЙ части карты (иначе закрыло бы кнопку «Остановить» в панели ГМ) */
+  padding: 64px calc(var(--side-w) + 16px) 84px calc(var(--rail-w) + 16px); pointer-events: none;
+  transition: padding-left 180ms ease;
+}
+.map-stage:has(.dock-block.dock-open) .video-layer { padding-left: calc(var(--rail-w) + 336px); }
+.map-stage:has(#game-panel.dock-open) .video-layer { padding-left: calc(var(--rail-w) + 456px); }
+.video-window {
+  --ar: 1.7778; /* пропорции самого видео: JS ставит после loadedmetadata */
+  position: relative; box-sizing: border-box; padding: 8px; max-width: 100%;
+  width: min(920px, 56vw, calc((100vh - 148px) * var(--ar))); aspect-ratio: var(--ar);
+  background: var(--surface-pop); border: 1px solid var(--line-strong); border-radius: var(--r-lg);
+  box-shadow: var(--shadow-2), 0 0 0 1px var(--accent-bg-strong), 0 0 46px color-mix(in srgb, var(--accent) 24%, transparent);
+  opacity: 0; transform: translateY(8px) scale(0.97);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+.video-window.open { opacity: 1; transform: none; }
+.video-window.closing { opacity: 0; transform: scale(0.98); transition-duration: 140ms; }
+.video-frame {
+  position: relative; width: 100%; height: 100%; overflow: hidden;
+  background: #000; border: 1px solid var(--line); border-radius: var(--r-md);
+}
+.video-frame::after { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 36px rgba(0, 0, 0, 0.35); }
+/* cover: окно уже имеет пропорции видео (рамка и подложка отличаются на ~1%) — без чёрных полос по краям */
+.video-el { display: block; width: 100%; height: 100%; object-fit: cover; background: #000; }
+/* уголки-«скобки» по краям рамки */
+.video-corner { position: absolute; width: 18px; height: 18px; border: 0 solid var(--accent); pointer-events: none; }
+.video-corner.tl { top: -5px; left: -5px; border-top-width: 2px; border-left-width: 2px; border-top-left-radius: 6px; }
+.video-corner.tr { top: -5px; right: -5px; border-top-width: 2px; border-right-width: 2px; border-top-right-radius: 6px; }
+.video-corner.bl { bottom: -5px; left: -5px; border-bottom-width: 2px; border-left-width: 2px; border-bottom-left-radius: 6px; }
+.video-corner.br { bottom: -5px; right: -5px; border-bottom-width: 2px; border-right-width: 2px; border-bottom-right-radius: 6px; }
+/* значки: «стоп» (только у ГМ) и «включить звук» (пока браузер не разрешил звук) */
+.video-btn {
+  position: absolute; z-index: 1; display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; padding: 0; pointer-events: auto; cursor: pointer;
+  background: color-mix(in srgb, var(--bg) 72%, transparent); border: 1px solid var(--line-strong); border-radius: 50%;
+  color: var(--text-2); box-shadow: none;
+}
+.video-btn:hover { background: color-mix(in srgb, var(--bg) 88%, transparent); border-color: var(--accent-line); color: var(--accent); }
+.video-btn .ico { width: 14px; height: 14px; }
+.video-stop { top: 16px; right: 16px; }
+.video-unmute { bottom: 16px; right: 16px; color: var(--amber); border-color: var(--amber-line); }
+.video-btn[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .video-window, .video-window.closing { transition: none; transform: none; }
+}
+
+/* ---- Панель «Ролики» у ГМ: список, строка «Идёт», загрузка ---- */
+.video-body { display: flex; flex-direction: column; gap: 8px; }
+.video-now {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+  background: var(--accent-bg); border: 1px solid var(--accent-line); border-radius: var(--r-md); color: var(--accent);
+}
+.video-now .ico { flex-shrink: 0; }
+.video-now-name { flex: 1; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.video-list { display: flex; flex-direction: column; gap: 4px; }
+.video-row {
+  display: flex; align-items: center; gap: 8px; padding: 5px 6px;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md);
+}
+.video-row.playing { border-color: var(--accent-line); background: var(--accent-bg); }
+.video-thumb { flex: 0 0 64px; width: 64px; height: 36px; object-fit: cover; border-radius: var(--r-sm); background: #000; pointer-events: none; }
+.video-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.video-title { font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.video-upload { display: flex; flex-direction: column; gap: 4px; }
+.video-upload-row { display: flex; align-items: center; gap: 8px; }
+.video-upload-row .video-title { flex: 1; }
+.video-hint { margin: 0; line-height: 1.35; }

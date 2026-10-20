@@ -5,6 +5,7 @@ const express = require('express');
 const { Server } = require('socket.io');
 const gameState = require('./gameState');
 const gameConfig = require('./gameConfig');
+const videos = require('./videos');
 const config = require('./config');
 
 const app = express();
@@ -69,6 +70,10 @@ app.use('/avatars/map-images', express.static(store.mapImages));
 app.use('/assets/music', express.static(store.music));
 app.use('/assets/sounds', express.static(store.sounds));
 app.use('/assets/sfx', express.static(store.sfx)); // свои звуки интерфейса (экран «Игра»); стандартные — из public/assets/sfx
+// Ролики (панель «Ролики»): static понимает Range — клиент начинает с нужной секунды, не качая файл целиком.
+// dotfiles: 'ignore' обязателен: по умолчанию прячется только файл с точкой в ПОСЛЕДНЕМ сегменте пути, а
+// недокачанные загрузки лежат в .tmp/<id> (точка в каталоге) — без опции они отдавались бы наружу.
+app.use('/assets/video', express.static(store.video, { dotfiles: 'ignore' }));
 app.use(express.static(PUBLIC_DIR));
 
 // Текст подсказки для команды чата /help.
@@ -84,6 +89,23 @@ function broadcastState() {
   gameState.persistRuntimeState();
   io.to('players').emit('state', gameState.getPublicState());
   io.to('gm').emit('state', gameState.getGMState());
+}
+
+// Ролик доиграл — снимаем показ и рассылаем state (окна у всех и так закрываются по своему «ended»; это для
+// ГМ-панели и для тех, кто зайдёт позже). Таймер пересоздаётся при каждом запуске и гасится остановкой.
+let videoExpiryTimer = null;
+function clearVideoExpiry() {
+  if (videoExpiryTimer) clearTimeout(videoExpiryTimer);
+  videoExpiryTimer = null;
+}
+function scheduleVideoExpiry(durationSec) {
+  clearVideoExpiry();
+  if (!(durationSec > 0)) return;
+  videoExpiryTimer = setTimeout(() => {
+    videoExpiryTimer = null;
+    if (gameState.expireVideo()) broadcastState();
+  }, durationSec * 1000 + config.VIDEO_END_GRACE_MS + 300);
+  videoExpiryTimer.unref();
 }
 
 // Предложения картинок от игроков (Ctrl+V с согласованием ГМ, см. gameState.js).
@@ -513,6 +535,59 @@ io.on('connection', (socket) => {
     if (typeof ack === 'function') ack(result.ok ? { ok: true } : { ok: false, reason: result.reason });
   });
 
+  // Ролики (панель «Ролики», только ГМ; ответ — ack). Загрузка кусками: begin → chunk × N → end (server/videos.js).
+  const ackWith = (ack, result) => { if (typeof ack === 'function') ack(result); };
+
+  socket.on('video:upload:begin', (payload, ack) => {
+    if (socket.data.role !== 'gm') return;
+    ackWith(ack, videos.begin(socket.id, payload));
+  });
+
+  socket.on('video:upload:chunk', (payload, ack) => {
+    if (socket.data.role !== 'gm') return;
+    const { uploadId, index, data } = payload || {};
+    ackWith(ack, videos.chunk(socket.id, uploadId, index, data));
+  });
+
+  socket.on('video:upload:end', (payload, ack) => {
+    if (socket.data.role !== 'gm') return;
+    const result = videos.finish(socket.id, (payload || {}).uploadId);
+    if (result.ok) broadcastState(); // список роликов у ГМ обновился
+    ackWith(ack, result);
+  });
+
+  socket.on('video:upload:abort', (payload, ack) => {
+    if (socket.data.role !== 'gm') return;
+    ackWith(ack, videos.abort(socket.id, (payload || {}).uploadId));
+  });
+
+  // Показ: у всех открывается окно (state.video → public/js/videofx.js); остановка закрывает его у всех сразу.
+  // Сервер сам снимает показ, когда ролик доиграл (+ запас): клиенты закрывают окно и по своему «ended».
+  socket.on('video:play', (payload, ack) => {
+    if (socket.data.role !== 'gm') return;
+    const result = gameState.playVideo((payload || {}).id);
+    if (result.ok) {
+      scheduleVideoExpiry(result.duration);
+      broadcastState();
+    }
+    ackWith(ack, result.ok ? { ok: true } : { ok: false, reason: result.reason });
+  });
+
+  socket.on('video:stop', (payload, ack) => {
+    if (socket.data.role !== 'gm') return;
+    clearVideoExpiry();
+    if (gameState.stopVideo()) broadcastState();
+    ackWith(ack, { ok: true });
+  });
+
+  socket.on('video:remove', (payload, ack) => {
+    if (socket.data.role !== 'gm') return;
+    const result = gameState.removeVideo((payload || {}).id);
+    if (result.wasPlaying) clearVideoExpiry();
+    if (result.ok) broadcastState();
+    ackWith(ack, result.ok ? { ok: true } : { ok: false, reason: 'not-found' });
+  });
+
   socket.on('item:give', ({ characterId, item }) => {
     if (socket.data.role !== 'gm') return;
     gameState.giveItem(characterId, item);
@@ -871,6 +946,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
+    videos.abortAllFor(socket.id); // оборвали посреди загрузки ролика — недокачанное стираем
     gameState.releaseSocket(socket.id);
     broadcastState();
   });

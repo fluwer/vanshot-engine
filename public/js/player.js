@@ -145,6 +145,7 @@ function onJoined({ characterId, name }) {
   if (lastState) {
     window.diceFx.onState(lastState);
     window.sceneFx.onState(lastState);
+    window.videoFx.onState(lastState.video); // вошли посреди ролика — окно откроется с нужной секунды
   }
 }
 
@@ -297,6 +298,7 @@ socket.on('state', (state) => {
     mapController.updateState(state);
     window.diceFx.onState(state);
     window.sceneFx.onState(state);
+    window.videoFx.onState(state.video); // окно ролика (только после входа: до него форма, а звук «в пустоту» не нужен)
     requestReachable();
     if (pendingFocusImageId && (state.mapImages || []).some((m) => m.id === pendingFocusImageId)) {
       const id = pendingFocusImageId;

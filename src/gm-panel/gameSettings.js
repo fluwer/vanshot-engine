@@ -17,7 +17,10 @@ const REASON_TEXT = [
   [/^invalid:check/, 'Параметры проверок заданы неверно'],
   [/^save-failed/, 'Сервер не смог записать файл настроек'],
   [/^too-large/, 'Файл слишком большой'],
-  [/^bad-format/, 'Неподходящий формат файла'],
+  [/^bad-format/, 'Неподходящий формат файла (для роликов — mp4 или webm)'],
+  [/^busy/, 'Другая загрузка ещё идёт'],
+  [/^invalid:(size|duration)/, 'Размер или длительность ролика заданы неверно'],
+  [/^(bad-chunk|bad-order|incomplete)/, 'Загрузка прервалась — попробуйте ещё раз'],
   [/^limit/, 'Достигнут предел количества'],
   [/^exists/, 'Такое уже есть'],
   [/^not-found/, 'Не найдено — обновите страницу'],
@@ -33,11 +36,12 @@ export function reasonText(reason) {
   return hit ? hit[1] : (r ? `Не принято: ${r}` : 'Не принято сервером');
 }
 
-// Событие с ack: Promise<{ ok, reason?, ...поля ответа }>. Ответа нет 8 секунд — { ok: false, reason: 'no-response' }.
-export function request(socket, event, payload) {
+// Событие с ack: Promise<{ ok, reason?, ...поля ответа }>. Ответа нет timeoutMs (по умолчанию 8 с) — { ok: false,
+// reason: 'no-response' }; куски ролика на медленном канале идут дольше — им дают больше времени.
+export function request(socket, event, payload, timeoutMs = 8000) {
   return new Promise((resolve) => {
     let done = false;
-    const timer = setTimeout(() => { if (!done) { done = true; resolve({ ok: false, reason: 'no-response' }); } }, 8000);
+    const timer = setTimeout(() => { if (!done) { done = true; resolve({ ok: false, reason: 'no-response' }); } }, timeoutMs);
     socket.emit(event, payload, (result) => {
       if (done) return;
       done = true;

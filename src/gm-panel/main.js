@@ -13,6 +13,7 @@ import ImageProposals from './ImageProposals.vue';
 import CombatStrip from './CombatStrip.vue';
 import RulerPanel from './RulerPanel.vue';
 import GameSettingsPanel from './GameSettingsPanel.vue';
+import VideoPanel from './VideoPanel.vue';
 
 // gm.js (обычный не-модульный скрипт) грузится раньше этого бандла и
 // успевает выставить window.gmSocket/window.gmBridge синхронно при загрузке
@@ -159,6 +160,16 @@ createApp(EffectsPanel, { bridge, gm: true }).mount('#effects-panel-vue-root');
 
 // ---- Линейка (пункт левой панели; режим ведёт сама панель по dock:change) ----
 createApp(RulerPanel, { bridge }).mount('#ruler-panel-vue-root');
+
+// ---- Ролики (пункт «Ролики»): библиотека, показ всем, удаление. Данные — state.videos / state.video ----
+const videoStore = reactive({ videos: [], video: null });
+createApp(VideoPanel, { bridge, store: videoStore }).mount('#video-panel-vue-root');
+window.videoPanelApp = {
+  updateState(videos, video) {
+    videoStore.videos = videos || [];
+    videoStore.video = video || null;
+  },
+};
 
 // ---- Настройки игры (пункт «Игра»): название и тема, звуки и ассеты, подписи и навыки, проверки ----
 // Каталог навыков берёт из общего store (его наполняет CharactersPanel.updateState).
