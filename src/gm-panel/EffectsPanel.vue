@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue';
 import { useDock } from './useDock.js';
 import { useWeather } from './useWeather.js';
+import { useFogFx } from './useFogFx.js';
 import Icon from './Icon.vue';
 
 // Роле-независимая панель — переиспользуется и в GM-панели, и в
@@ -15,6 +16,9 @@ const props = defineProps({
 
 // ---- Погода на экране (public/js/weather.js): одна на всю игру, задаёт ГМ ----
 const { weather, setEnabled } = useWeather();
+// Туман войны у игрока (public/js/fogfx.js): личный выключатель «живого» тумана. ГМ он не нужен —
+// у него туман всегда квадратами клеток для точной правки.
+const { fog, setEnabled: setFogEnabled } = useFogFx();
 const WEATHER_MODES = [
   { mode: 'off', label: 'Нет', icon: 'ban' },
   { mode: 'cold', label: 'Холод', icon: 'snowflake' },
@@ -101,6 +105,14 @@ function toggle(type) {
       <p v-else class="muted small">Сейчас: {{ weather.label }}</p>
       <label class="npc-flag-toggle" title="Выключатель только на этом экране"><input type="checkbox" :checked="weather.enabled" @change="setEnabled($event.target.checked)"> Показывать погоду у меня</label>
       <p v-if="weather.reduced" class="muted small">Отключена системой: включено «уменьшение движения».</p>
+    </div>
+
+    <div v-if="!gm" class="weather-section">
+      <span class="fog-label">Туман</span>
+      <label class="npc-flag-toggle" title="Выключатель только на этом экране"><input type="checkbox" :checked="fog.enabled" @change="setFogEnabled($event.target.checked)"> Живой туман у меня</label>
+      <p class="muted small">Мягкие края с колышущейся дымкой. Выключите, если картинка тормозит: края останутся мягкими, но неподвижными.</p>
+      <p v-if="fog.reduced" class="muted small">Дымка не движется: включено «уменьшение движения».</p>
+      <p v-else-if="fog.enabled && fog.mode !== 'full'" class="muted small">Движение упрощено: экран не успевает отрисовывать кадры.</p>
     </div>
   </div>
 </template>
