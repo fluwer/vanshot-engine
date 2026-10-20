@@ -92,13 +92,12 @@ socket.on('fog:update', ({ blob }) => mapController.applyFogBlob(blob));
 mapController.setFogChangeHandler((blob) => socket.emit('fog:set', { blob }));
 
 // ---- Картинки на карте ----
-mapController.setMapImageUpdateHandler(({ id, x, y, scale, rotation }) => {
-  const payload = { id };
-  if (x !== undefined) payload.x = x;
-  if (y !== undefined) payload.y = y;
-  if (scale !== undefined) payload.scale = scale;
-  if (rotation !== undefined) payload.rotation = rotation;
-  socket.emit('mapimage:update', payload);
+// Патч целиком (x, y, scale, rotation, stretchX/stretchY, crop): поля, которых в жесте не было, не приходят — и не сбрасываются.
+mapController.setMapImageUpdateHandler((patch) => socket.emit('mapimage:update', patch));
+// Горячие клавиши выбранной картинки (map.js): Delete — удалить, Ctrl+D — дубликат.
+mapController.setMapImageActionHandler(({ action, id }) => {
+  if (action === 'duplicate') window.imageTools.duplicateImage(socket, mapController, id);
+  else if (action === 'remove') window.imageTools.removeImage(socket, id);
 });
 
 // ---- Рисование на карте ----
@@ -150,6 +149,8 @@ Dock.init({
     { id: 'sound', icon: 'volume-2', label: 'Звук', title: 'Звук', block: 'sound-panel', group: 1 },
     { id: 'video', icon: 'clapperboard', label: 'Ролики', title: 'Ролики', block: 'video-panel', group: 1 },
     { id: 'game', icon: 'sliders-horizontal', label: 'Игра', title: 'Настройки игры', block: 'game-panel', group: 1 },
+    // Масштаб интерфейса — личная настройка устройства (public/js/uiscale.js); без поддержки zoom пункта нет.
+    ...(window.UiScale && window.UiScale.supported ? [{ id: 'view', icon: 'scaling', label: 'Вид', title: 'Вид: масштаб интерфейса', block: 'view-panel', group: 1 }] : []),
   ],
   side: { id: 'characters-panel', title: 'Участники' },
 });

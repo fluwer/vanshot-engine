@@ -55,6 +55,11 @@ function syncMusicTime(audio, music) {
   if (Math.abs(audio.currentTime - target) > 1) audio.currentTime = target;
 }
 
+// Повтор запуска музыки после первого жеста пользователя (см. applyMusicState).
+function retryMusic() {
+  if (lastMusicState) applyMusicState(lastMusicState);
+}
+
 // Вызывается на каждый 'state' от сервера (см. gm.js/player.js) — применяет
 // текущее состояние музыки (трек/играет-ли/позиция) к локальному <audio>.
 function applyMusicState(music) {
@@ -75,8 +80,13 @@ function applyMusicState(music) {
     audio.addEventListener('loadedmetadata', () => syncMusicTime(audio, music), { once: true });
   }
   syncMusicTime(audio, music);
-  if (music.playing) audio.play().catch(() => {}); // автоплей может быть заблокирован до жеста пользователя
-  else audio.pause();
+  if (music.playing) {
+    audio.play().catch((err) => {
+      // Автоплей заблокирован до жеста пользователя (перезагрузка страницы): первый клик/клавиша запускает музыку
+      // (retryMusic одна и та же функция — очередь не копится на каждой рассылке state).
+      if (err && err.name === 'NotAllowedError' && window.AudioUnlock) window.AudioUnlock.onUnlock(retryMusic);
+    });
+  } else audio.pause();
   if (musicNowPlayingEl) {
     musicNowPlayingEl.textContent = `${music.playing ? 'Играет' : 'На паузе'}: ${track.label || track.id}`;
   }

@@ -157,7 +157,16 @@ h3 {
 .map-stage { --side-w: 0px; --rail-w: 72px; }
 .map-stage.side-open { --side-w: 328px; }
 
-.overlay-body { padding: 5px 8px; max-height: 30vh; overflow-y: auto; }
+/* ---- Масштаб интерфейса (public/js/uiscale.js): --ui-scale на :root, `zoom` на контейнерах интерфейса ----
+   Карта (холст), погода, кубики, ролик, заставки и бой-заставка не масштабируются. Внутри масштабируемого блока все
+   длины в px умножаются на масштаб, а проценты — нет: поэтому формулы вида calc(100% − var(--rail-w) − …) остаются
+   верными (у --rail-w/--side-w px-значения). Единицы vh/vw `zoom` тоже умножает — в масштабируемых блоках их делим на
+   --ui-scale. Тосты и подсказки лежат в <body> вне панелей — их размер задан через calc() с тем же множителем. */
+:root { --ui-scale: 1; }
+.dock-rail, .dock-block, .dock-side, .dock-side-toggle, .hud-top, .party-root, .action-bar,
+.journal, .journal-btn, .journal-peek, .proposals-card, .modal-dialog { zoom: var(--ui-scale); }
+
+.overlay-body { padding: 5px 8px; max-height: calc(30vh / var(--ui-scale)); overflow-y: auto; }
 
 /* ---- Левая панель ---- */
 .dock-rail {
@@ -167,12 +176,15 @@ h3 {
 }
 .dock-rail-card {
   pointer-events: auto; width: 56px; padding: 4px;
+  /* при большом масштабе пункты не помещаются по высоте — карточка прокручивается (полоса скрыта) */
+  max-height: 100%; min-height: 0; overflow-y: auto; scrollbar-width: none;
   display: flex; flex-direction: column; gap: 2px;
   background: var(--surface-0); border: 1px solid var(--line); border-radius: var(--r-lg);
   box-shadow: var(--shadow-1), var(--inset-top);
 }
+.dock-rail-card::-webkit-scrollbar { display: none; }
 .dock-btn {
-  display: flex; flex-direction: column; align-items: center; gap: 1px; width: 100%;
+  flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 1px; width: 100%;
   padding: 5px 0 4px; background: transparent; border-color: transparent; box-shadow: none;
   border-radius: var(--r-md); color: var(--text-dim);
 }
@@ -247,15 +259,14 @@ h3 {
   position: absolute; top: 8px; z-index: 4;
   left: calc(var(--rail-w) + (100% - var(--rail-w) - var(--side-w)) / 2); transform: translateX(-50%);
   display: flex; flex-direction: column; align-items: center; gap: 6px;
-  max-width: 36vw; pointer-events: none;
+  max-width: calc(36vw / var(--ui-scale)); pointer-events: none;
 }
-/* Узкий экран (≤1200px): по центру верхняя плашка попала бы под левый блок (320px) —
-   прижимаем её к правому краю блока, чтобы они не накладывались. */
-@media (max-width: 1200px) {
-  .hud-top {
-    left: calc(var(--rail-w) + 336px); transform: none; align-items: flex-start;
-    max-width: calc(100% - var(--rail-w) - 336px - var(--side-w) - 24px);
-  }
+/* Узкий экран (логическая ширина ≤ 1200px): по центру верхняя плашка попала бы под левый блок (320px) —
+   прижимаем её к правому краю блока, чтобы они не накладывались. Класс .ui-narrow ставит uiscale.js по ширине окна,
+   ДЕЛЁННОЙ на масштаб (медиазапрос смотрел бы на реальную ширину и не учитывал бы масштаб интерфейса). */
+.ui-narrow .hud-top {
+  left: calc(var(--rail-w) + 336px); transform: none; align-items: flex-start;
+  max-width: calc(100% - var(--rail-w) - 336px - var(--side-w) - 24px);
 }
 .combat-strip {
   pointer-events: auto; min-width: 220px; max-width: 360px;
@@ -270,7 +281,7 @@ h3 {
 .combat-strip-head:hover { background: var(--amber-bg); border-color: transparent; border-radius: var(--r-lg); }
 .combat-strip-head .ico:first-child { color: var(--amber); }
 .combat-strip-chevron { color: var(--text-dim); display: inline-flex; }
-.combat-strip-list { padding: 2px 8px 8px; max-height: 40vh; overflow-y: auto; }
+.combat-strip-list { padding: 2px 8px 8px; max-height: calc(40vh / var(--ui-scale)); overflow-y: auto; }
 
 /* ---- Нижняя панель действий (бросок за выбранного, DC, бросок мастера) ---- */
 .action-bar {
@@ -381,6 +392,10 @@ select.fog-btn { padding: 4px 28px 4px 8px; }
 .image-tools { display: flex; flex-direction: column; gap: 4px; }
 .image-tools-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .image-tools-row-3 { grid-template-columns: repeat(3, 1fr); }
+.image-tools-row-2 { grid-template-columns: repeat(2, 1fr); }
+/* Пресеты масштаба интерфейса (src/gm-panel/ViewPanel.vue) */
+.view-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 6px; }
+.view-presets button { padding: 5px 4px; }
 .image-tools-row button { padding: 5px 4px; }
 
 /* ---- Список локаций (переиспользует .map-image-row, но флексовый: имя тянется,
@@ -514,6 +529,14 @@ select.fog-btn { padding: 4px 28px 4px 8px; }
 }
 .scene-intro-continue:hover { background: var(--accent-bg); border-color: var(--accent); }
 .scene-intro-overlay.ready .scene-intro-continue { pointer-events: auto; }
+/* «Нажмите, чтобы включить звук» — только пока браузер не разрешил звук (public/js/scenefx.js, audiounlock.js) */
+.scene-intro-mute {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim);
+  opacity: 0; pointer-events: none;
+}
+.scene-intro-mute[hidden] { display: none; }
+.scene-intro-mute .ico { width: 14px; height: 14px; }
+.scene-intro-overlay.show .scene-intro-mute { animation: sceneFadeUp 0.8s ease 1.9s forwards; }
 .scene-intro-overlay.show .scene-intro-kicker { animation: sceneFadeUp 1s ease 0.3s forwards; }
 .scene-intro-overlay.show .scene-intro-title { animation: sceneTitleIn 1.4s cubic-bezier(0.2, 0.7, 0.2, 1) 0.5s forwards; }
 .scene-intro-overlay.show .scene-intro-line { animation: sceneLineIn 1.2s ease 1.1s forwards; }
@@ -527,6 +550,7 @@ select.fog-btn { padding: 4px 28px 4px 8px; }
 @media (prefers-reduced-motion: reduce) {
   .scene-intro-overlay.show .scene-intro-kicker,
   .scene-intro-overlay.show .scene-intro-title,
+  .scene-intro-overlay.show .scene-intro-mute,
   .scene-intro-overlay.show .scene-intro-continue { animation: none; opacity: 1; transform: none; letter-spacing: 0.06em; }
   .scene-intro-overlay.show .scene-intro-line { animation: none; width: min(420px, 60vw); }
 }
@@ -537,7 +561,8 @@ select.fog-btn { padding: 4px 28px 4px 8px; }
   display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none;
 }
 .toast {
-  max-width: min(480px, 90vw); padding: 8px 14px; border-radius: var(--r-lg); font-size: 13px; color: var(--text);
+  max-width: min(calc(480px * var(--ui-scale)), 90vw); padding: calc(8px * var(--ui-scale)) calc(14px * var(--ui-scale));
+  border-radius: var(--r-lg); font-size: calc(13px * var(--ui-scale)); color: var(--text);
   background: var(--surface-pop); border: 1px solid var(--line-strong); box-shadow: var(--shadow-2);
   animation: toastIn 0.25s ease; transition: opacity 0.3s ease;
 }
@@ -548,8 +573,9 @@ select.fog-btn { padding: 4px 28px 4px 8px; }
 
 /* ---- Подсказка data-tip (public/js/tooltip.js): один элемент в body, выше модалок (50) и тостов (60) ---- */
 .tip {
-  position: fixed; left: 0; top: 0; z-index: 70; max-width: 300px; padding: 7px 10px;
-  border-radius: var(--r-md); font-size: 12px; line-height: 1.4; font-weight: 400; color: var(--text-2);
+  position: fixed; left: 0; top: 0; z-index: 70; max-width: calc(300px * var(--ui-scale));
+  padding: calc(7px * var(--ui-scale)) calc(10px * var(--ui-scale));
+  border-radius: var(--r-md); font-size: calc(12px * var(--ui-scale)); line-height: 1.4; font-weight: 400; color: var(--text-2);
   background: var(--surface-pop); border: 1px solid var(--line-strong); box-shadow: var(--shadow-2);
   pointer-events: none; visibility: hidden; opacity: 0; transition: opacity 80ms ease;
 }
@@ -558,7 +584,7 @@ select.fog-btn { padding: 4px 28px 4px 8px; }
 /* ---- Игроки предлагают картинки (src/gm-panel/ImageProposals.vue) ----
    Плавающая НЕ блокирующая карточка поверх панелей ГМ, ниже модалок. */
 .proposals-card {
-  position: absolute; top: 96px; left: 50%; transform: translateX(-50%); z-index: 30; width: min(380px, 92vw);
+  position: absolute; top: 96px; left: 50%; transform: translateX(-50%); z-index: 30; width: min(380px, calc(92vw / var(--ui-scale)));
   display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
   background: var(--surface-pop); border: 1px solid var(--accent-line); border-radius: var(--r-lg);
   box-shadow: var(--shadow-2);
@@ -590,7 +616,7 @@ select.fog-btn { padding: 4px 28px 4px 8px; }
   padding: 20px;
 }
 .modal-dialog {
-  max-width: 640px; width: 100%; max-height: 85vh;
+  max-width: 640px; width: 100%; max-height: calc(85vh / var(--ui-scale));
   overflow-y: auto; margin: 0; box-shadow: var(--shadow-2), var(--inset-top);
 }
 .modal-dialog-head {
@@ -839,15 +865,17 @@ select.fog-btn { padding: 4px 28px 4px 8px; }
   position: absolute; inset: 0; z-index: 11; display: flex; align-items: center; justify-content: center;
   /* поля: не наезжать на чип локации сверху, нижнюю панель, правую колонку ГМ и открытый блок слева —
      окно встаёт по центру СВОБОДНОЙ части карты (иначе закрыло бы кнопку «Остановить» в панели ГМ) */
-  padding: 64px calc(var(--side-w) + 16px) 84px calc(var(--rail-w) + 16px); pointer-events: none;
+  /* слой сам не масштабируется, а панели, от которых он уходит, — да: поля умножаем на --ui-scale */
+  padding: calc(64px * var(--ui-scale)) calc((var(--side-w) + 16px) * var(--ui-scale)) calc(84px * var(--ui-scale)) calc((var(--rail-w) + 16px) * var(--ui-scale));
+  pointer-events: none;
   transition: padding-left 180ms ease;
 }
-.map-stage:has(.dock-block.dock-open) .video-layer { padding-left: calc(var(--rail-w) + 336px); }
-.map-stage:has(#game-panel.dock-open) .video-layer { padding-left: calc(var(--rail-w) + 456px); }
+.map-stage:has(.dock-block.dock-open) .video-layer { padding-left: calc((var(--rail-w) + 336px) * var(--ui-scale)); }
+.map-stage:has(#game-panel.dock-open) .video-layer { padding-left: calc((var(--rail-w) + 456px) * var(--ui-scale)); }
 .video-window {
   --ar: 1.7778; /* пропорции самого видео: JS ставит после loadedmetadata */
   position: relative; box-sizing: border-box; padding: 8px; max-width: 100%;
-  width: min(920px, 56vw, calc((100vh - 148px) * var(--ar))); aspect-ratio: var(--ar);
+  width: min(920px, 56vw, calc((100vh - 148px * var(--ui-scale)) * var(--ar))); aspect-ratio: var(--ar);
   background: var(--surface-pop); border: 1px solid var(--line-strong); border-radius: var(--r-lg);
   box-shadow: var(--shadow-2), 0 0 0 1px var(--accent-bg-strong), 0 0 46px color-mix(in srgb, var(--accent) 24%, transparent);
   opacity: 0; transform: translateY(8px) scale(0.97);

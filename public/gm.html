@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="css/style.css">
 <!--GAME_BOOT-->
 <script src="js/game.js"></script>
+<script src="js/uiscale.js"></script>
 </head>
 <body>
   <div class="map-stage">
@@ -50,6 +51,11 @@
     </div>
 
     <!-- Ролики: библиотека коротких видео (загрузить, показать всем, удалить) — только ГМ -->
+    <!-- Вид: масштаб интерфейса (public/js/uiscale.js), личная настройка устройства -->
+    <div class="dock-block" id="view-panel">
+      <div id="view-panel-vue-root"></div>
+    </div>
+
     <div class="dock-block" id="video-panel">
       <div id="video-panel-vue-root"></div>
     </div>
@@ -112,6 +118,7 @@
   <script src="js/icons.js"></script>
   <script src="js/ui.js"></script>
   <script src="js/tooltip.js"></script>
+  <script src="js/audiounlock.js"></script>
   <script src="js/map.js"></script>
   <script src="js/dice.js"></script>
   <script src="js/combatfx.js"></script>

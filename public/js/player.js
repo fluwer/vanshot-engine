@@ -135,6 +135,13 @@ function onJoined({ characterId, name }) {
     });
   });
   mapController.setMapImageSelectHandler((id) => window.imagesPanelApp?.setSelected(id));
+  // Горячие клавиши своей картинки (map.js): Delete — удалить (с подтверждением, как кнопка), Ctrl+D — дубликат.
+  mapController.setMapImageActionHandler(({ action, id }) => {
+    const img = ((lastState && lastState.mapImages) || []).find((m) => m.id === id);
+    if (img && img.locked) { window.imageTools.notify(IMAGE_EDIT_REASONS.locked, 'error'); return; }
+    if (action === 'duplicate') window.imageTools.duplicateImage(socket, mapController, id);
+    else if (action === 'remove') window.imageTools.removeImage(socket, id, `Удалить картинку «${(img && img.name) || 'Картинка'}» с карты?`);
+  });
   window.imagesPanelApp?.setMyCharacterId(myCharacterId);
   window.playerBridge.mapController = mapController;
   requestReachable();
@@ -262,6 +269,8 @@ Dock.init({
     { id: 'ruler', icon: 'ruler', label: 'Линейка', title: 'Линейка', block: 'ruler-panel', group: 1 },
     { id: 'images', icon: 'image', label: 'Картинки', title: 'Мои картинки', block: 'images-panel', group: 1 },
     { id: 'sound', icon: 'volume-2', label: 'Звук', title: 'Звук', block: 'sound-panel', group: 2 },
+    // Масштаб интерфейса — личная настройка устройства (public/js/uiscale.js); без поддержки zoom пункта нет.
+    ...(window.UiScale && window.UiScale.supported ? [{ id: 'view', icon: 'scaling', label: 'Вид', title: 'Вид: масштаб интерфейса', block: 'view-panel', group: 2 }] : []),
     { id: 'leave', icon: 'log-out', label: 'Выход', title: 'Забыть сессию на этом устройстве', action: leaveSession, bottom: true },
   ],
 });

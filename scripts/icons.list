@@ -269,3 +269,7 @@ rotate-ccw
 save
 copy
 shuffle
+
+# --- правка картинок (обрезка), масштаб интерфейса
+crop
+scaling

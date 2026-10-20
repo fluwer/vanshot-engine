@@ -294,9 +294,15 @@ io.on('connection', (socket) => {
   // клиент остался бы с оптимистично сдвинутой картинкой).
   socket.on('mapimage:update', (payload, ack) => {
     const reply = (res) => { if (typeof ack === 'function') ack(res); };
-    const { id, x, y, scale, rotation, locked, flipX, flipY } = payload || {};
+    const { id, x, y, scale, rotation, locked, flipX, flipY, stretchX, stretchY, crop } = payload || {};
+    // Поле, которого нет в payload, не должно «сбрасываться»: updateMapImage/applyImageGeometry смотрят `key in patch`,
+    // поэтому в patch попадают только присланные клиентом поля.
+    const geometry = {};
+    if (payload && 'stretchX' in payload) geometry.stretchX = stretchX;
+    if (payload && 'stretchY' in payload) geometry.stretchY = stretchY;
+    if (payload && 'crop' in payload) geometry.crop = crop;
     if (socket.data.role === 'gm') {
-      gameState.updateMapImage(id, { x, y, scale, rotation, locked, flipX, flipY });
+      gameState.updateMapImage(id, { x, y, scale, rotation, locked, flipX, flipY, ...geometry });
       reply({ ok: true });
       return broadcastState();
     }
@@ -307,7 +313,7 @@ io.on('connection', (socket) => {
         return reply({ ok: false, reason: 'rate-limit' });
       }
       socket.data.lastImageUpdateAt = now;
-      const result = gameState.updateOwnedMapImage(id, socket.data.characterId, { x, y, scale, rotation, flipX, flipY });
+      const result = gameState.updateOwnedMapImage(id, socket.data.characterId, { x, y, scale, rotation, flipX, flipY, ...geometry });
       if (!result.ok) {
         socket.emit('state', gameState.getPublicState());
         return reply({ ok: false, reason: result.reason });
@@ -340,6 +346,31 @@ io.on('connection', (socket) => {
         return reply({ ok: false, reason: result.reason });
       }
       reply({ ok: true });
+      return broadcastState();
+    }
+    return reply({ ok: false, reason: 'forbidden' });
+  });
+
+  // Дубликат картинки: { id } → ack { ok, entry } (клиент выделяет копию). ГМ — любой картинки (копия без владельца);
+  // игрок — только своей (владение/блокировка/локация/лимит как у правки, тот же троттлинг), копия тоже его.
+  socket.on('mapimage:duplicate', (payload, ack) => {
+    const reply = (res) => { if (typeof ack === 'function') ack(res); };
+    const { id } = payload || {};
+    if (socket.data.role === 'gm') {
+      const result = gameState.duplicateMapImage(id, { gm: true });
+      if (!result.ok) return reply({ ok: false, reason: result.reason });
+      reply({ ok: true, entry: result.entry });
+      return broadcastState();
+    }
+    if (socket.data.role === 'player' && socket.data.characterId) {
+      const now = Date.now();
+      if (now - (socket.data.lastImageUpdateAt || 0) < config.IMAGE_UPDATE_MIN_INTERVAL_MS) {
+        return reply({ ok: false, reason: 'rate-limit' });
+      }
+      socket.data.lastImageUpdateAt = now;
+      const result = gameState.duplicateMapImage(id, { characterId: socket.data.characterId });
+      if (!result.ok) return reply({ ok: false, reason: result.reason });
+      reply({ ok: true, entry: result.entry });
       return broadcastState();
     }
     return reply({ ok: false, reason: 'forbidden' });

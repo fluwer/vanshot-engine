@@ -26,9 +26,10 @@
   // ---- Звук ---------------------------------------------------------------
   // Есть public/assets/sfx/scene-enter.mp3 — играем его; нет — синтез WebAudio
   // (низкий нарастающий «брасс»-дрон, затем металлический «пинг» и хвост-эхо):
-  // файлов не нужно, работает офлайн. Браузер может не разрешить звук до
-  // первого клика (перезагрузка страницы без взаимодействия) — тогда звук
-  // тихо пропускается, оверлей работает как обычно.
+  // файлов не нужно, работает офлайн. Браузер не разрешает звук, пока на странице не было
+  // клика или клавиши (перезагрузка, новая вкладка): тогда под названием появляется значок
+  // «звук выключен», а звук играет сразу после первого жеста (public/js/audiounlock.js) —
+  // в том числе на «Продолжить» или Enter. Новая заставка отменяет ожидание прежней.
   // Свой звук ГМ (настройки игры → sfx.sceneEnter) главнее стандартного; при смене настроек файл
   // подгружается заново (url и громкость берём у Game.sfx).
   let soundFile = null;
@@ -58,7 +59,7 @@
 
   function playSynth() {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) return;
+    if (!AudioCtx) return true; // звука в этом браузере нет совсем — ждать жеста бессмысленно
     audioCtx = audioCtx || new AudioCtx();
     if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
     const ctx = audioCtx;
@@ -125,17 +126,56 @@
       osc.start(pingAt);
       osc.stop(pingAt + 1.7);
     });
+    return true;
   }
 
+  // Пытается начать звук. Promise<boolean>: true — пошёл (или его не будет по другой причине: ошибка,
+  // нет WebAudio — ждать жеста нет смысла), false — запретил браузер, нужен жест. Пока жеста не было,
+  // не пробуем вовсе: AudioContext без жеста засорял бы консоль предупреждением.
   function playSceneSound() {
+    if (!window.AudioUnlock.isActive()) return Promise.resolve(false);
     try {
       if (soundFile) {
         soundFile.currentTime = 0;
-        soundFile.play().catch(() => {});
-      } else {
-        playSynth();
+        return soundFile.play().then(() => true, (err) => !(err && err.name === 'NotAllowedError'));
       }
-    } catch (err) { /* звук необязателен */ }
+      return Promise.resolve(playSynth());
+    } catch (err) {
+      return Promise.resolve(true); // звук необязателен
+    }
+  }
+
+  // Токен текущей заставки: ожидание жеста от прежней (или уже закрытой) не должно играть звук.
+  let soundToken = 0;
+  let muteHint = null;
+
+  function setMuteHint(on) {
+    if (muteHint) muteHint.hidden = !on;
+  }
+
+  function armSoundRetry(token) {
+    window.AudioUnlock.onUnlock(() => {
+      if (token !== soundToken) return;
+      playSceneSound().then((ok) => {
+        if (token !== soundToken) return;
+        if (ok) setMuteHint(false);
+        else armSoundRetry(token); // у клика несколько событий: «разрешающим» бывает не первое
+      });
+    });
+  }
+
+  function startSceneSound() {
+    const token = ++soundToken;
+    if (!window.AudioUnlock.isActive()) {
+      setMuteHint(true);
+      armSoundRetry(token);
+      return;
+    }
+    playSceneSound().then((ok) => {
+      if (ok || token !== soundToken) return;
+      setMuteHint(true);
+      armSoundRetry(token);
+    });
   }
 
   // ---- Оверлей ------------------------------------------------------------
@@ -149,6 +189,7 @@
   function close() {
     if (!ready) return;
     clearTimeout(readyTimer);
+    soundToken++; // закрыли — ждущий жеста звук этой заставки больше не нужен
     ready = false;
     overlay.classList.remove('show', 'ready');
     document.removeEventListener('keydown', onKey, true);
@@ -177,7 +218,15 @@
     button.className = 'scene-intro-continue';
     button.textContent = 'Продолжить';
     button.addEventListener('click', close);
-    inner.append(kicker, title, line, button);
+    // «Звук выключен»: показывается, только если браузер не дал запустить звук (startSceneSound).
+    muteHint = document.createElement('div');
+    muteHint.className = 'scene-intro-mute';
+    muteHint.hidden = true;
+    if (window.Icons && window.Icons.el) muteHint.appendChild(window.Icons.el('volume-x'));
+    const muteText = document.createElement('span');
+    muteText.textContent = 'Нажмите, чтобы включить звук';
+    muteHint.appendChild(muteText);
+    inner.append(kicker, title, line, button, muteHint);
     overlay.appendChild(inner);
     overlay.setAttribute('aria-label', 'Локация: ' + (name || ''));
 
@@ -185,7 +234,7 @@
     void overlay.offsetWidth;
     overlay.classList.add('show');
     document.addEventListener('keydown', onKey, true);
-    playSceneSound();
+    startSceneSound();
 
     readyTimer = setTimeout(() => {
       ready = true;

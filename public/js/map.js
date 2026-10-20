@@ -195,6 +195,13 @@ function createMapController({ canvas, role, myCharacterId }) {
   let imageDragging = null;            // { id, offsetX, offsetY } — offset от центра картинки до точки захвата
   let imageResizing = null;            // { id, anchorX, anchorY, dirX, dirY, length0, naturalWidth, naturalHeight, scale0 }
   let imageRotating = null;            // { id, rotation0, startAngle } — rotation0/startAngle в радианах
+  let imageGesture = null;             // растяжение по сторонам / обрезка: см. startImageGesture
+  let imageCropMode = false;           // режим обрезки: ручки тянут край обрезки (клавиша C)
+  let mapImageActionHandler = null;    // горячие клавиши: ({ action: 'remove' | 'duplicate', id })
+  const IMAGE_STRETCH_MIN = 0.1;       // как MAP_IMAGE_STRETCH_MIN/MAX и MAP_IMAGE_CROP_MIN_VISIBLE в server/config.js
+  const IMAGE_STRETCH_MAX = 10;        // (сервер всё равно проверяет)
+  const IMAGE_CROP_MIN_VISIBLE = 0.05;
+  const IMAGE_MIN_SIDE = 8;            // мировые px: тоньше жест картинку не сожмёт (ручки слиплись бы)
   const IMAGE_HANDLE_RADIUS = 9;       // в экранных px — переводим в мировые через camera.zoom
   const ROTATE_HANDLE_DIST = 26;       // в экранных px — расстояние от верхней грани до ручки поворота
   const TOUCH_HANDLE_FACTOR = 2.2;     // у пальца ручки целиться труднее — зона попадания больше, чем у мыши
@@ -208,6 +215,24 @@ function createMapController({ canvas, role, myCharacterId }) {
   const imageEditActive = () => imageEdit && (role === 'gm' || !!myCharacterId);
   const handleHitRadius = () => (IMAGE_HANDLE_RADIUS * (lastPointerType === 'mouse' ? 1 : TOUCH_HANDLE_FACTOR)) / camera.zoom;
 
+  // Видимая часть картинки. К общему масштабу scale добавлены необязательные поля (у старых картинок их нет):
+  // stretchX/stretchY — растяжение по одной оси, crop { l, t, r, b } — доли натурального размера, обрезанные
+  // слева/сверху/справа/снизу (в осях исходного файла). m.x/m.y — центр ВИДИМОЙ части. Возвращает размер на карте
+  // (w, h, мировые px), исходный прямоугольник (sx, sy, sw, sh — для drawImage), масштаб по осям (kx, ky: мировых px
+  // на пиксель файла) и обрезку. Формулы те же, что imageVisibleSize в server/gameState.js.
+  function imageBox(m) {
+    const c = m.crop;
+    const l = (c && c.l) || 0;
+    const t = (c && c.t) || 0;
+    const r = (c && c.r) || 0;
+    const b = (c && c.b) || 0;
+    const sw = m.naturalWidth * (1 - l - r);
+    const sh = m.naturalHeight * (1 - t - b);
+    const kx = m.scale * (m.stretchX || 1);
+    const ky = m.scale * (m.stretchY || 1);
+    return { w: sw * kx, h: sh * ky, sx: m.naturalWidth * l, sy: m.naturalHeight * t, sw, sh, kx, ky, l, t, r, b };
+  }
+
   // Топовая (последняя в массиве) картинка под мировой точкой, или null.
   // Точка переводится в локальные (неповёрнутые) координаты картинки поворотом
   // на -rotation вокруг центра — дальше обычная проверка axis-aligned прямоугольника.
@@ -219,8 +244,7 @@ function createMapController({ canvas, role, myCharacterId }) {
       // Игрок «видит сквозь» чужие и ГМ-картинки: выбрать можно только свою,
       // иначе ГМ-фон под ней перехватывал бы клик.
       if (!canEditImage(m)) continue;
-      const w = m.naturalWidth * m.scale;
-      const h = m.naturalHeight * m.scale;
+      const { w, h } = imageBox(m);
       const angle = m.rotation || 0;
       const dx = wx - m.x;
       const dy = wy - m.y;
@@ -235,8 +259,7 @@ function createMapController({ canvas, role, myCharacterId }) {
 
   // Четыре угла картинки в мировых координатах (с учётом поворота): [x, y] для NW/NE/SE/SW.
   function mapImageCorners(m) {
-    const w = m.naturalWidth * m.scale;
-    const h = m.naturalHeight * m.scale;
+    const { w, h } = imageBox(m);
     const angle = m.rotation || 0;
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
@@ -254,7 +277,7 @@ function createMapController({ canvas, role, myCharacterId }) {
 
   // Мировая позиция ручки поворота — над верхней гранью картинки, с учётом поворота.
   function rotateHandlePosition(m) {
-    const h = m.naturalHeight * m.scale;
+    const { h } = imageBox(m);
     const angle = m.rotation || 0;
     const dist = h / 2 + ROTATE_HANDLE_DIST / camera.zoom;
     return {
@@ -273,21 +296,199 @@ function createMapController({ canvas, role, myCharacterId }) {
     return Math.hypot(wx - p.x, wy - p.y) <= radius ? m : null;
   }
 
-  // Угловая ручка выбранной картинки под мировой точкой (для масштабирования
-  // перетаскиванием) — проверяется только у уже выбранной картинки.
-  function findMapImageHandleAt(wx, wy) {
+  // Середины сторон в мировых координатах (с учётом поворота): N, E, S, W. Тянут сторону: растяжение в одну
+  // сторону, а в режиме обрезки — край обрезки.
+  function mapImageEdgeMids(m) {
+    const { w, h } = imageBox(m);
+    const angle = m.rotation || 0;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    return [{ x: 0, y: -h / 2 }, { x: w / 2, y: 0 }, { x: 0, y: h / 2 }, { x: -w / 2, y: 0 }].map((p) => ({
+      x: m.x + p.x * cos - p.y * sin,
+      y: m.y + p.x * sin + p.y * cos,
+    }));
+  }
+
+  // Ручка изменения размера выбранной картинки под мировой точкой — проверяется только у уже выбранной.
+  // Сначала углы (kind 'corner', index 0..3 = NW, NE, SE, SW), затем середины сторон (kind 'edge', 0..3 = N, E, S, W):
+  // у маленькой картинки они почти сливаются, и угол важнее. { m, kind, index, point } | null.
+  function findImageResizeHandleAt(wx, wy) {
     if (!currentState || !currentState.mapImages || !selectedMapImageId) return null;
     const m = currentState.mapImages.find((mi) => mi.id === selectedMapImageId);
     if (!m || m.locked || !canEditImage(m)) return null;
-    const corners = mapImageCorners(m);
     const radius = handleHitRadius();
+    const corners = mapImageCorners(m);
     for (let i = 0; i < corners.length; i++) {
-      if (Math.hypot(wx - corners[i].x, wy - corners[i].y) <= radius) {
-        return { m, cornerIndex: i, corners };
-      }
+      if (Math.hypot(wx - corners[i].x, wy - corners[i].y) <= radius) return { m, kind: 'corner', index: i, point: corners[i] };
+    }
+    const mids = mapImageEdgeMids(m);
+    for (let i = 0; i < mids.length; i++) {
+      if (Math.hypot(wx - mids[i].x, wy - mids[i].y) <= radius) return { m, kind: 'edge', index: i, point: mids[i] };
     }
     return null;
   }
+
+  // ---- Растяжение по сторонам и обрезка (жест тянет одну-две стороны картинки) ----
+  // Углы 0..3 — NW, NE, SE, SW; середины 0..3 — N, E, S, W. L/R — левая/правая сторона, T/B — верхняя/нижняя
+  // (в осях картинки, то есть с учётом поворота, но без отражения).
+  const CORNER_SIDES = [['L', 'T'], ['R', 'T'], ['R', 'B'], ['L', 'B']];
+  const EDGE_SIDES = [['T'], ['R'], ['B'], ['L']];
+
+  // Снимок картинки на старте жеста: дальше всё считается от него (а не накопительно) — без дрейфа.
+  // mode 'stretch' меняет stretchX/stretchY, 'crop' — обрезку; противоположная сторона стоит на месте.
+  function startImageGesture(m, kind, index, mode) {
+    const box = imageBox(m);
+    const angle = m.rotation || 0;
+    imageGesture = {
+      id: m.id,
+      mode,
+      sides: (kind === 'corner' ? CORNER_SIDES : EDGE_SIDES)[index],
+      cx0: m.x,
+      cy0: m.y,
+      cos: Math.cos(angle),
+      sin: Math.sin(angle),
+      w0: box.w,
+      h0: box.h,
+      stretchX0: m.stretchX || 1,
+      stretchY0: m.stretchY || 1,
+      crop0: { l: box.l, t: box.t, r: box.r, b: box.b },
+      kx: box.kx,
+      ky: box.ky,
+      nw: m.naturalWidth,
+      nh: m.naturalHeight,
+      flipX: !!m.flipX,
+      flipY: !!m.flipY,
+    };
+  }
+
+  // Одна ось жеста. sgn: +1 — двигается правая/нижняя сторона, −1 — левая/верхняя; pc — координата указателя
+  // на этой оси (начало — центр на старте жеста). Возвращает новый размер, смещение центра и новое значение
+  // (растяжение или доля обрезки), уже зажатые в допустимые пределы.
+  function solveImageAxis(g, axis, sgn, pc) {
+    const size0 = axis === 'x' ? g.w0 : g.h0;
+    const fixed = (-sgn * size0) / 2; // противоположная сторона не двигается
+    const want = Math.max(IMAGE_MIN_SIDE, (pc - fixed) * sgn);
+    if (g.mode === 'stretch') {
+      const s0 = axis === 'x' ? g.stretchX0 : g.stretchY0;
+      const s = clamp((s0 * want) / size0, IMAGE_STRETCH_MIN, IMAGE_STRETCH_MAX);
+      const size = (size0 * s) / s0;
+      return { center: fixed + (sgn * size) / 2, stretch: s };
+    }
+    // Обрезка хранится в осях исходного файла: у отражённой картинки левая сторона на экране — правая в файле.
+    const full = axis === 'x' ? g.nw * g.kx : g.nh * g.ky; // полный размер файла на карте по этой оси
+    const flip = axis === 'x' ? g.flipX : g.flipY;
+    const positive = sgn > 0;
+    const trimKey = axis === 'x' ? (positive !== flip ? 'r' : 'l') : (positive !== flip ? 'b' : 't');
+    const otherKey = { l: 'r', r: 'l', t: 'b', b: 't' }[trimKey];
+    const other = g.crop0[otherKey];
+    const trim = clamp(1 - want / full - other, 0, 1 - IMAGE_CROP_MIN_VISIBLE - other);
+    const size = full * (1 - trim - other);
+    return { center: fixed + (sgn * size) / 2, trimKey, trim };
+  }
+
+  // Применяет жест к картинке m для текущей точки указателя (мировые координаты): меняет m на месте,
+  // сохранение на сервер — по отпусканию (см. pointerup).
+  function applyImageGesture(m, world) {
+    const g = imageGesture;
+    const dx = world.x - g.cx0;
+    const dy = world.y - g.cy0;
+    const px = dx * g.cos + dy * g.sin;
+    const py = -dx * g.sin + dy * g.cos;
+    const mvX = g.sides.includes('R') ? 1 : g.sides.includes('L') ? -1 : 0;
+    const mvY = g.sides.includes('B') ? 1 : g.sides.includes('T') ? -1 : 0;
+    let ox = 0;
+    let oy = 0;
+    const crop = { ...g.crop0 };
+    if (mvX) {
+      const r = solveImageAxis(g, 'x', mvX, px);
+      ox = r.center;
+      if (r.stretch !== undefined) m.stretchX = r.stretch;
+      else crop[r.trimKey] = r.trim;
+    }
+    if (mvY) {
+      const r = solveImageAxis(g, 'y', mvY, py);
+      oy = r.center;
+      if (r.stretch !== undefined) m.stretchY = r.stretch;
+      else crop[r.trimKey] = r.trim;
+    }
+    if (g.mode === 'crop') {
+      if (!crop.l && !crop.t && !crop.r && !crop.b) delete m.crop; else m.crop = crop;
+    } else {
+      if (m.stretchX !== undefined && Math.abs(m.stretchX - 1) < 1e-4) delete m.stretchX;
+      if (m.stretchY !== undefined && Math.abs(m.stretchY - 1) < 1e-4) delete m.stretchY;
+    }
+    // Центр — в осях картинки: c0 + u·ox + v·oy (u = (cos, sin), v = (−sin, cos)).
+    m.x = g.cx0 + g.cos * ox - g.sin * oy;
+    m.y = g.cy0 + g.sin * ox + g.cos * oy;
+  }
+
+  // Патч для сервера по окончании жеста: растяжение — оба множителя (null убирает поле), обрезка — объект или null.
+  function imageGesturePatch(m, mode) {
+    const patch = { id: m.id, x: m.x, y: m.y };
+    if (mode === 'crop') patch.crop = m.crop ? { l: m.crop.l, t: m.crop.t, r: m.crop.r, b: m.crop.b } : null;
+    else { patch.stretchX = m.stretchX || null; patch.stretchY = m.stretchY || null; }
+    return patch;
+  }
+
+  // Режим обрезки: ручки тянут край обрезки вместо растяжения. Включается только для выбранной, доступной
+  // и не заблокированной картинки; выбор другой картинки или закрытие режима картинок его выключает.
+  function setImageCropMode(on) {
+    let next = !!on;
+    if (next) {
+      const m = currentState && currentState.mapImages && currentState.mapImages.find((mi) => mi.id === selectedMapImageId);
+      next = imageEditActive() && !!m && !m.locked && canEditImage(m);
+    }
+    if (next === imageCropMode) return;
+    imageCropMode = next;
+    imageGesture = null;
+    draw();
+    emitCropMode();
+  }
+
+  // Режим обрезки сменился: панели (кнопка «Обрезать») слушают document 'imagecrop:change' { on }.
+  function emitCropMode() {
+    document.dispatchEvent(new CustomEvent('imagecrop:change', { detail: { on: imageCropMode } }));
+  }
+  // Тихий выход из режима обрезки (выбор снят, режим картинок выключен) — без перерисовки: её делает вызывающий.
+  function leaveCropMode() {
+    if (!imageCropMode) return;
+    imageCropMode = false;
+    emitCropMode();
+  }
+
+  // Поле ввода, в которое сейчас печатают: горячие клавиши картинок его не трогают.
+  function isTypingTarget(el) {
+    if (!el) return false;
+    if (el.isContentEditable || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') return true;
+    if (el.tagName !== 'INPUT') return false;
+    return !['range', 'checkbox', 'radio', 'button', 'file', 'submit'].includes(el.type);
+  }
+
+  // Горячие клавиши выбранной картинки: Delete/Backspace — удалить, Ctrl/Cmd+D — дубликат, C — режим обрезки,
+  // Enter/Esc — выйти из обрезки. Буквы — по физической клавише (event.code): на русской раскладке key = «в»/«с».
+  // capture: раньше обработчика Esc у Dock (он пропускает уже обработанное — defaultPrevented).
+  function onImageKeydown(e) {
+    if (e.defaultPrevented || e.isComposing || !imageEditActive() || !selectedMapImageId) return;
+    if (isTypingTarget(e.target) || isTypingTarget(document.activeElement)) return;
+    if (document.querySelector('.modal-backdrop') || document.querySelector('.scene-intro-overlay.show')) return;
+    const m = currentState && currentState.mapImages && currentState.mapImages.find((mi) => mi.id === selectedMapImageId);
+    if (!m || !canEditImage(m)) return;
+    const ctrl = e.ctrlKey || e.metaKey;
+    if ((e.key === 'Delete' || e.key === 'Backspace') && !ctrl && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      if (mapImageActionHandler) mapImageActionHandler({ action: 'remove', id: m.id });
+    } else if (ctrl && !e.altKey && !e.shiftKey && e.code === 'KeyD') {
+      e.preventDefault(); // иначе браузер добавит страницу в закладки
+      if (mapImageActionHandler) mapImageActionHandler({ action: 'duplicate', id: m.id });
+    } else if (!ctrl && !e.altKey && !e.shiftKey && e.code === 'KeyC') {
+      e.preventDefault();
+      setImageCropMode(!imageCropMode);
+    } else if (imageCropMode && (e.key === 'Enter' || e.key === 'Escape')) {
+      e.preventDefault();
+      setImageCropMode(false);
+    }
+  }
+  document.addEventListener('keydown', onImageKeydown, true);
 
   // --- Рисование (панель рисования) ---------------------------------------
   // drawMode — как fogEdit/imageEdit, перехватывает жест целиком, но доступен
@@ -856,8 +1057,7 @@ function createMapController({ canvas, role, myCharacterId }) {
     if (!t) return null;
     let minX = t.drawX, minY = t.drawY, maxX = t.drawX + t.drawWidth, maxY = t.drawY + t.drawHeight;
     (currentState && currentState.mapImages || []).forEach((m) => {
-      const w = m.naturalWidth * m.scale;
-      const h = m.naturalHeight * m.scale;
+      const { w, h } = imageBox(m);
       minX = Math.min(minX, m.x - w / 2);
       minY = Math.min(minY, m.y - h / 2);
       maxX = Math.max(maxX, m.x + w / 2);
@@ -1192,6 +1392,8 @@ function createMapController({ canvas, role, myCharacterId }) {
       imageDragging = null;
       imageResizing = null;
       imageRotating = null;
+      imageGesture = null;
+      leaveCropMode();
       if (mapImageSelectHandler) mapImageSelectHandler(null);
     }
     // Выбор ГМ не должен «висеть»: при смене локации и когда выбранного
@@ -1319,11 +1521,8 @@ function createMapController({ canvas, role, myCharacterId }) {
 
     if (imageEditActive()) {
       if (findRotateHandleAt(world.x, world.y)) return 'crosshair'; // приближение, нет родного "rotate"
-      const handleHit = findMapImageHandleAt(world.x, world.y);
-      if (handleHit) {
-        const c = handleHit.corners[handleHit.cornerIndex];
-        return resizeCursorForAngle(c.x - handleHit.m.x, c.y - handleHit.m.y);
-      }
+      const handleHit = findImageResizeHandleAt(world.x, world.y);
+      if (handleHit) return resizeCursorForAngle(handleHit.point.x - handleHit.m.x, handleHit.point.y - handleHit.m.y);
       const hit = findMapImageAt(world.x, world.y);
       if (hit) return hit.locked ? 'not-allowed' : 'grab';
       return 'grab';
@@ -1408,26 +1607,33 @@ function createMapController({ canvas, role, myCharacterId }) {
           canvas.style.cursor = 'crosshair';
           return;
         }
-        const handleHit = findMapImageHandleAt(world.x, world.y);
+        const handleHit = findImageResizeHandleAt(world.x, world.y);
         if (handleHit) {
-          const { m, cornerIndex, corners } = handleHit;
-          // Противоположный угол остаётся неподвижным «якорем» масштабирования.
-          const anchor = corners[(cornerIndex + 2) % 4];
-          const dragCorner = corners[cornerIndex];
-          imageResizing = {
-            id: m.id,
-            anchorX: anchor.x,
-            anchorY: anchor.y,
-            dirX: dragCorner.x - anchor.x,
-            dirY: dragCorner.y - anchor.y,
-            length0: Math.hypot(dragCorner.x - anchor.x, dragCorner.y - anchor.y),
-            scale0: m.scale,
-          };
-          canvas.style.cursor = resizeCursorForAngle(dragCorner.x - anchor.x, dragCorner.y - anchor.y);
+          const { m, kind, index, point } = handleHit;
+          if (kind === 'corner' && !imageCropMode && !e.shiftKey) {
+            // Угол без Shift — пропорциональный масштаб: противоположный угол остаётся неподвижным «якорем».
+            const anchor = mapImageCorners(m)[(index + 2) % 4];
+            imageResizing = {
+              id: m.id,
+              anchorX: anchor.x,
+              anchorY: anchor.y,
+              dirX: point.x - anchor.x,
+              dirY: point.y - anchor.y,
+              length0: Math.hypot(point.x - anchor.x, point.y - anchor.y),
+              scale0: m.scale,
+            };
+            canvas.style.cursor = resizeCursorForAngle(point.x - anchor.x, point.y - anchor.y);
+          } else {
+            // Середина стороны, угол с Shift (растянуть как угодно) или любая ручка в режиме обрезки.
+            startImageGesture(m, kind, index, imageCropMode ? 'crop' : 'stretch');
+            canvas.style.cursor = resizeCursorForAngle(point.x - m.x, point.y - m.y);
+          }
           return;
         }
         const hit = findMapImageAt(world.x, world.y);
+        const prevSelected = selectedMapImageId;
         selectedMapImageId = hit ? hit.id : null;
+        if (selectedMapImageId !== prevSelected && imageCropMode) setImageCropMode(false);
         if (hit && !hit.locked && canEditImage(hit)) {
           imageDragging = { id: hit.id, offsetX: world.x - hit.x, offsetY: world.y - hit.y };
           canvas.style.cursor = 'grabbing';
@@ -1559,6 +1765,17 @@ function createMapController({ canvas, role, myCharacterId }) {
       return;
     }
 
+    if (imageGesture) {
+      const pt = eventToCanvasPoint(e);
+      const world = screenToWorld(pt.x, pt.y);
+      const m = currentState && currentState.mapImages && currentState.mapImages.find((mi) => mi.id === imageGesture.id);
+      if (m) {
+        applyImageGesture(m, world);
+        draw();
+      }
+      return;
+    }
+
     if (imageRotating) {
       const pt = eventToCanvasPoint(e);
       const world = screenToWorld(pt.x, pt.y);
@@ -1630,6 +1847,16 @@ function createMapController({ canvas, role, myCharacterId }) {
       imageResizing = null;
       activePointers.delete(e.pointerId);
       if (m && mapImageUpdateHandler) mapImageUpdateHandler({ id: m.id, x: m.x, y: m.y, scale: m.scale });
+      draw();
+      canvas.style.cursor = cursorForHover(pt.x, pt.y);
+      return;
+    }
+    if (imageGesture) {
+      const m = currentState && currentState.mapImages && currentState.mapImages.find((mi) => mi.id === imageGesture.id);
+      const mode = imageGesture.mode;
+      imageGesture = null;
+      activePointers.delete(e.pointerId);
+      if (m && mapImageUpdateHandler) mapImageUpdateHandler(imageGesturePatch(m, mode));
       draw();
       canvas.style.cursor = cursorForHover(pt.x, pt.y);
       return;
@@ -1744,9 +1971,12 @@ function createMapController({ canvas, role, myCharacterId }) {
       currentState.mapImages.forEach((m) => {
         const img = getAvatarImage(m.url, draw);
         if (!img) return;
-        const w = m.naturalWidth * m.scale;
-        const h = m.naturalHeight * m.scale;
+        const { w, h, l, t, r, b } = imageBox(m);
         const angle = m.rotation || 0;
+        // Обрезка хранится долями — применяем их к реальным размерам файла (а не к объявленным серверу):
+        // без обрезки это весь файл, как и раньше. Растяжение уже учтено в w/h.
+        const iw = img.naturalWidth || m.naturalWidth;
+        const ih = img.naturalHeight || m.naturalHeight;
         // Поворот — через save/translate/rotate вокруг центра картинки, рисуем
         // от -w/2,-h/2 в повёрнутой системе координат.
         ctx.save();
@@ -1754,7 +1984,7 @@ function createMapController({ canvas, role, myCharacterId }) {
         ctx.rotate(angle);
         // Отражение — в системе координат самой картинки (после поворота): рамка и ручки не меняются.
         if (m.flipX || m.flipY) ctx.scale(m.flipX ? -1 : 1, m.flipY ? -1 : 1);
-        ctx.drawImage(img, -w / 2, -h / 2, w, h);
+        ctx.drawImage(img, iw * l, ih * t, iw * (1 - l - r), ih * (1 - t - b), -w / 2, -h / 2, w, h);
         ctx.restore();
       });
     }
@@ -2061,13 +2291,38 @@ function createMapController({ canvas, role, myCharacterId }) {
     if (imageEditActive() && selectedMapImageId && currentState.mapImages) {
       const m = currentState.mapImages.find((mi) => mi.id === selectedMapImageId);
       if (m && canEditImage(m)) {
-        const w = m.naturalWidth * m.scale;
-        const h = m.naturalHeight * m.scale;
+        const box = imageBox(m);
+        const { w, h } = box;
         const angle = m.rotation || 0;
+        const cropping = imageCropMode && !m.locked;
+        const frameColor = m.locked ? THEME.danger : (cropping ? THEME.amber : THEME.accent);
+        // Режим обрезки: полная картинка бледной подложкой за видимой частью — видно, что отрезано, и обрезанное
+        // можно вернуть, потянув ручку наружу. Рисуется в тех же осях, что и сама картинка (поворот, отражение).
+        if (cropping) {
+          const img = getAvatarImage(m.url, draw);
+          if (img) {
+            const fullW = m.naturalWidth * box.kx;
+            const fullH = m.naturalHeight * box.ky;
+            const offX = (m.naturalWidth * (box.r - box.l) / 2) * box.kx; // центр полной картинки относительно видимой части
+            const offY = (m.naturalHeight * (box.b - box.t) / 2) * box.ky;
+            ctx.save();
+            ctx.translate(m.x, m.y);
+            ctx.rotate(angle);
+            if (m.flipX || m.flipY) ctx.scale(m.flipX ? -1 : 1, m.flipY ? -1 : 1);
+            ctx.globalAlpha = 0.35;
+            ctx.drawImage(img, 0, 0, img.naturalWidth || m.naturalWidth, img.naturalHeight || m.naturalHeight, -fullW / 2 + offX, -fullH / 2 + offY, fullW, fullH);
+            ctx.globalAlpha = 1;
+            ctx.strokeStyle = frameColor;
+            ctx.lineWidth = 1 / camera.zoom;
+            ctx.setLineDash([2 / camera.zoom, 3 / camera.zoom]);
+            ctx.strokeRect(-fullW / 2 + offX, -fullH / 2 + offY, fullW, fullH);
+            ctx.restore();
+          }
+        }
         ctx.save();
         ctx.translate(m.x, m.y);
         ctx.rotate(angle);
-        ctx.strokeStyle = m.locked ? THEME.danger : THEME.accent;
+        ctx.strokeStyle = frameColor;
         ctx.lineWidth = 2 / camera.zoom;
         ctx.setLineDash([6 / camera.zoom, 4 / camera.zoom]);
         ctx.strokeRect(-w / 2, -h / 2, w, h);
@@ -2076,12 +2331,23 @@ function createMapController({ canvas, role, myCharacterId }) {
           const visualRadius = IMAGE_HANDLE_RADIUS * (lastPointerType === 'mouse' ? 1 : 1.5);
           const handleSize = (visualRadius * 2) / camera.zoom;
           ctx.save();
-          ctx.fillStyle = THEME.accent;
+          ctx.fillStyle = cropping ? THEME.amber : THEME.accent;
           ctx.strokeStyle = '#fff';
           ctx.lineWidth = 1.5 / camera.zoom;
           mapImageCorners(m).forEach((c) => {
             ctx.fillRect(c.x - handleSize / 2, c.y - handleSize / 2, handleSize, handleSize);
             ctx.strokeRect(c.x - handleSize / 2, c.y - handleSize / 2, handleSize, handleSize);
+          });
+          // Середины сторон: вытянутые планки вдоль стороны (растяжение в одну сторону / край обрезки).
+          mapImageEdgeMids(m).forEach((c, i) => {
+            const barW = handleSize * (i % 2 === 0 ? 1.25 : 0.55);
+            const barH = handleSize * (i % 2 === 0 ? 0.55 : 1.25);
+            ctx.save();
+            ctx.translate(c.x, c.y);
+            ctx.rotate(angle);
+            ctx.fillRect(-barW / 2, -barH / 2, barW, barH);
+            ctx.strokeRect(-barW / 2, -barH / 2, barW, barH);
+            ctx.restore();
           });
           ctx.restore();
           // Ручка поворота — кружок над верхней гранью, соединённый линией с картинкой.
@@ -2159,7 +2425,7 @@ function createMapController({ canvas, role, myCharacterId }) {
     centerCameraOn: (x, y) => { camera.x = x; camera.y = y; clampCamera(); draw(); saveCameraDebounced(); },
     // У игрока выбор токена (selectedTarget — его персонаж) НЕ сбрасываем: без него тап-ход
     // не работает; режим правки у игрока касается только его собственных картинок.
-    setImageEditMode: (v) => { imageEdit = !!v; if (imageEdit && role === 'gm') clearSelection(); if (!imageEdit) { imageDragging = null; imageResizing = null; imageRotating = null; selectedMapImageId = null; if (mapImageSelectHandler) mapImageSelectHandler(null); } draw(); if (lastHoverPoint) canvas.style.cursor = cursorForHover(lastHoverPoint.x, lastHoverPoint.y); },
+    setImageEditMode: (v) => { imageEdit = !!v; if (imageEdit && role === 'gm') clearSelection(); if (!imageEdit) { imageDragging = null; imageResizing = null; imageRotating = null; imageGesture = null; leaveCropMode(); selectedMapImageId = null; if (mapImageSelectHandler) mapImageSelectHandler(null); } draw(); if (lastHoverPoint) canvas.style.cursor = cursorForHover(lastHoverPoint.x, lastHoverPoint.y); },
     // Видимый размер мира в мировых px — для подбора начального масштаба вставляемой картинки.
     getViewSize: () => ({ w: canvas.width / camera.zoom, h: canvas.height / camera.zoom }),
     // Для слоя погоды (public/js/weather.js): камера и размер холста — перевод мира в экран
@@ -2169,7 +2435,17 @@ function createMapController({ canvas, role, myCharacterId }) {
     getImageQuads: () => ((currentState && currentState.mapImages) || []).map(mapImageCorners),
     setMapImageSelectHandler: (fn) => { mapImageSelectHandler = fn; },
     setMapImageUpdateHandler: (fn) => { mapImageUpdateHandler = fn; },
-    selectMapImage: (id) => { selectedMapImageId = id; draw(); },
+    // Выбор картинки программно (из панели, после дубликата): панель узнаёт о нём тем же колбэком, что и о клике по карте.
+    selectMapImage: (id) => {
+      const prev = selectedMapImageId;
+      selectedMapImageId = id;
+      if (id !== prev && imageCropMode) setImageCropMode(false);
+      draw();
+      if (id !== prev && mapImageSelectHandler) mapImageSelectHandler(selectedMapImageId);
+    },
+    setMapImageActionHandler: (fn) => { mapImageActionHandler = fn; },
+    setImageCropMode,
+    isImageCropMode: () => imageCropMode,
     getSelectedMapImageId: () => selectedMapImageId,
     setDrawMode: (v) => { drawMode = !!v; if (drawMode && role === 'gm') clearSelection(); if (!drawMode) { currentStroke = null; drawErasing = false; erasedThisGesture = null; } draw(); if (lastHoverPoint) canvas.style.cursor = cursorForHover(lastHoverPoint.x, lastHoverPoint.y); },
     setDrawTool: (t) => { drawTool = t === 'eraser' ? 'eraser' : 'pen'; },

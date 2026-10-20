@@ -1647,6 +1647,54 @@ function findMapImage(id) {
   return state.mapImages.find((m) => m.id === id);
 }
 
+// Геометрия картинки. К `scale` (общий масштаб) добавлены необязательные поля — у старых картинок их нет и всё
+// считается как раньше: `stretchX/stretchY` (растяжение по одной оси, множитель поверх scale) и
+// `crop: { l, t, r, b }` (доли натурального размера, обрезанные слева/сверху/справа/снизу; хранятся в осях исходного
+// файла). `x/y` — центр ВИДИМОЙ части. Та же формула — `imageBox` в public/js/map.js.
+function imageVisibleSize(m) {
+  const c = m.crop || {};
+  return {
+    w: m.naturalWidth * (1 - (c.l || 0) - (c.r || 0)) * m.scale * (m.stretchX || 1),
+    h: m.naturalHeight * (1 - (c.t || 0) - (c.b || 0)) * m.scale * (m.stretchY || 1),
+  };
+}
+
+// Применяет к картинке stretchX/stretchY/crop из patch. Строго: не число, вне диапазона, объект не той формы —
+// поле не меняется (процесс не падает). Единичное растяжение и нулевая обрезка (или null) удаляют поле.
+function applyImageGeometry(m, p) {
+  ['stretchX', 'stretchY'].forEach((key) => {
+    if (!(key in p)) return;
+    const v = p[key];
+    if (v === null) { delete m[key]; return; }
+    if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) return;
+    const k = clamp(v, config.MAP_IMAGE_STRETCH_MIN, config.MAP_IMAGE_STRETCH_MAX);
+    if (Math.abs(k - 1) < 1e-4) delete m[key]; else m[key] = Math.round(k * 10000) / 10000;
+  });
+  if ('crop' in p) {
+    const c = p.crop;
+    if (c === null) { delete m.crop; return; }
+    if (!c || typeof c !== 'object' || Array.isArray(c)) return;
+    const side = (v) => (typeof v === 'number' && Number.isFinite(v) ? clamp(v, 0, 1 - config.MAP_IMAGE_CROP_MIN_VISIBLE) : null);
+    let l = side(c.l); let t = side(c.t); let r = side(c.r); let b = side(c.b);
+    if (l === null || t === null || r === null || b === null) return;
+    // сумма двух противоположных обрезок оставляет видимой не меньше CROP_MIN_VISIBLE: лишнее срезаем пропорционально
+    const maxSum = 1 - config.MAP_IMAGE_CROP_MIN_VISIBLE;
+    if (l + r > maxSum) { const k = maxSum / (l + r); l *= k; r *= k; }
+    if (t + b > maxSum) { const k = maxSum / (t + b); t *= k; b *= k; }
+    const round = (v) => Math.round(v * 10000) / 10000;
+    l = round(l); t = round(t); r = round(r); b = round(b);
+    if (!l && !t && !r && !b) delete m.crop; else m.crop = { l, t, r, b };
+  }
+}
+
+// Потолок видимой стороны для картинки игрока: обрезка/растяжение не должны обходить PLAYER_IMAGE_MAX_SIDE_PX
+// (иначе камера у всех растянулась бы) — лишнее срезаем общим масштабом.
+function clampPlayerImageSize(m) {
+  const { w, h } = imageVisibleSize(m);
+  const side = Math.max(w, h);
+  if (side > config.PLAYER_IMAGE_MAX_SIDE_PX) m.scale = Math.max(0.05, m.scale * (config.PLAYER_IMAGE_MAX_SIDE_PX / side));
+}
+
 // Разбор data URL картинки: { ok: true, ext, buffer } или { ok: false, reason }.
 // reason: 'invalid' (не картинка/битый формат) | 'too-large' (> MAP_IMAGE_UPLOAD_MAX_SIZE).
 // Общий для загрузки ГМ (addMapImage) и предложений игроков (proposeMapImage).
@@ -1711,6 +1759,7 @@ function updateMapImage(id, patch) {
   if (typeof patch.flipX === 'boolean') m.flipX = patch.flipX;
   if (typeof patch.flipY === 'boolean') m.flipY = patch.flipY;
   if (typeof patch.locked === 'boolean') m.locked = patch.locked;
+  applyImageGeometry(m, patch);
   return m;
 }
 
@@ -1761,8 +1810,8 @@ function checkOwnedMapImage(id, characterId) {
   return { ok: true, entry: m };
 }
 
-// Игрок правит СВОЮ картинку. В patch берём только x/y/scale/rotation — locked
-// игрок менять не может; масштаб и позиция ограничены (см. config.PLAYER_IMAGE_*).
+// Игрок правит СВОЮ картинку. В patch берём только x/y/scale/rotation/flip/stretch/crop — locked
+// игрок менять не может; масштаб, размер и позиция ограничены (см. config.PLAYER_IMAGE_*).
 function updateOwnedMapImage(id, characterId, patch) {
   const check = checkOwnedMapImage(id, characterId);
   if (!check.ok) return check;
@@ -1772,6 +1821,8 @@ function updateOwnedMapImage(id, characterId, patch) {
     const maxScale = config.PLAYER_IMAGE_MAX_SIDE_PX / Math.max(m.naturalWidth, m.naturalHeight);
     m.scale = clamp(p.scale, 0.05, Math.min(10, maxScale));
   }
+  applyImageGeometry(m, p);
+  clampPlayerImageSize(m);
   if (Number.isFinite(p.x) || Number.isFinite(p.y)) {
     const pos = clampImagePosition(
       findLocation(m.locationId) || getActiveLocation(),
@@ -1804,11 +1855,55 @@ function removeOwnedMapImage(id, characterId) {
   return { ok: true };
 }
 
+// Дубликат картинки: тот же файл (url общий — removeMapImage стирает файл, только когда на него никто не
+// ссылается), копия геометрии (поворот, отражение, обрезка, растяжение), сдвиг на клетку, поверх всех слоёв,
+// не заблокирована. actor: { gm: true } — любая картинка, копия без владельца; { characterId } — только своя
+// (те же проверки, что у правки) и в пределах MAX_MAP_IMAGES_PER_PLAYER, копия тоже его.
+// { ok: true, entry } | { ok: false, reason }.
+function duplicateMapImage(id, actor) {
+  const src = findMapImage(id);
+  if (!src) return { ok: false, reason: 'unknown' };
+  const player = actor && actor.characterId ? actor.characterId : null;
+  if (player) {
+    const check = checkOwnedMapImage(id, player);
+    if (!check.ok) return check;
+    const owned = state.mapImages.filter((m) => m.ownerId === player).length;
+    if (owned >= config.MAX_MAP_IMAGES_PER_PLAYER) return { ok: false, reason: 'limit-reached' };
+  } else if (!actor || !actor.gm) {
+    return { ok: false, reason: 'forbidden' };
+  }
+  const entry = JSON.parse(JSON.stringify(src));
+  entry.id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const suffix = ' (копия)';
+  const base = typeof src.name === 'string' ? src.name : '';
+  entry.name = !base ? 'Копия' : (base.endsWith(suffix) ? base : (base + suffix)).slice(0, config.MAP_IMAGE_NAME_MAX_LENGTH);
+  entry.locked = false;
+  if (player) {
+    entry.ownerId = src.ownerId;
+    entry.ownerName = src.ownerName;
+  } else {
+    delete entry.ownerId;
+    delete entry.ownerName;
+  }
+  let x = src.x + config.CELL_SIZE;
+  let y = src.y + config.CELL_SIZE;
+  if (player) {
+    const pos = clampImagePosition(findLocation(src.locationId) || getActiveLocation(), x, y);
+    x = pos.x;
+    y = pos.y;
+  }
+  entry.x = x;
+  entry.y = y;
+  state.mapImages.push(entry);
+  return { ok: true, entry };
+}
+
 function removeMapImage(id) {
   const idx = state.mapImages.findIndex((m) => m.id === id);
   if (idx === -1) return false;
   const [removed] = state.mapImages.splice(idx, 1);
-  if (removed && removed.url) {
+  // Файл может быть общим у нескольких картинок (дубликаты) — стираем, только когда ссылок не осталось.
+  if (removed && removed.url && !state.mapImages.some((m) => m.url === removed.url)) {
     // Файл лежит в data/uploads/map-images (старые — ещё в public/avatars/map-images, если не перенесены).
     const name = path.basename(removed.url);
     [MAP_IMAGES_DIR, path.join(PUBLIC_DIR, 'avatars', 'map-images')].forEach((dir) => {
@@ -2370,6 +2465,7 @@ module.exports = {
   updateMapImage,
   reorderMapImage,
   removeMapImage,
+  duplicateMapImage,
   updateOwnedMapImage,
   reorderOwnedMapImage,
   removeOwnedMapImage,

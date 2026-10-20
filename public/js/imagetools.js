@@ -160,5 +160,34 @@
     } catch (err) { /* звук необязателен */ }
   }
 
-  window.imageTools = { encodeFile, avatarFromFile, clipboardImageFiles, shouldIgnorePaste, imageName, notify, ping };
+  // ---- Действия над картинкой карты: общие для кнопок панелей и горячих клавиш (Delete, Ctrl+D) ----
+  const IMAGE_FAIL_TEXT = {
+    locked: 'ГМ заблокировал картинку',
+    forbidden: 'Это не ваша картинка',
+    'wrong-location': 'Картинка на другой локации',
+    'limit-reached': 'Достигнут лимит ваших картинок на карте',
+    unknown: 'Такой картинки уже нет',
+  };
+  function reportImageFail(res) {
+    if (res && !res.ok && res.reason !== 'rate-limit') {
+      notify(IMAGE_FAIL_TEXT[res.reason] || 'Не удалось изменить картинку', 'error');
+    }
+  }
+  // Дубликат: сервер кладёт копию поверх всех слоёв и отвечает её записью — выделяем копию.
+  function duplicateImage(socket, mapController, id) {
+    socket.emit('mapimage:duplicate', { id }, (res) => {
+      if (res && res.ok && res.entry) mapController.selectMapImage(res.entry.id);
+      else reportImageFail(res);
+    });
+  }
+  // Удаление; confirmText — спросить подтверждение (у игрока), без него — сразу (как кнопка у ГМ).
+  function removeImage(socket, id, confirmText) {
+    if (confirmText && !window.confirm(confirmText)) return;
+    socket.emit('mapimage:remove', { id }, reportImageFail);
+  }
+
+  window.imageTools = {
+    encodeFile, avatarFromFile, clipboardImageFiles, shouldIgnorePaste, imageName, notify, ping,
+    reportImageFail, duplicateImage, removeImage,
+  };
 })();

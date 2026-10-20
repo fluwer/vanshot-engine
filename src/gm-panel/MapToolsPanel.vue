@@ -149,7 +149,7 @@ function onLockChange(e) {
 function removeImage() {
   const id = selectedMapImageId.value;
   if (!id) return;
-  props.bridge.socket.emit('mapimage:remove', { id });
+  window.imageTools.removeImage(props.bridge.socket, id);
 }
 
 onMounted(() => {
@@ -302,7 +302,7 @@ function removeLocation(locationId) {
       </div>
     </div>
     <div class="tab-pane tab-pane-flex" :class="{ active: activeTab === 'tab-images' }">
-      <p class="muted small fog-hint">Тяните картинку по карте, за угловые точки — размер, за верхнюю ручку — поворот. Пока блок открыт, фишки не выбираются.</p>
+      <p class="muted small fog-hint">Тяните картинку по карте, за угловые точки — размер (с Shift — как угодно), за середины сторон — растянуть в одну сторону, за верхнюю ручку — поворот. C — обрезка, Ctrl+D — дубликат, Delete — удалить. Пока блок открыт, фишки не выбираются.</p>
       <label class="upload-label">
         <Icon name="upload" /> Загрузить картинку
         <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden @change="onFileChange">
@@ -322,7 +322,7 @@ function removeLocation(locationId) {
       <div class="map-image-controls" v-show="selectedMapImage">
         <ImageLayerTools gm :image="selectedMapImage" :stack="store.mapImages" :bridge="bridge" />
         <label class="npc-flag-toggle" title="Заблокировать позицию (запретить перемещение). У картинки игрока блокировка запрещает правку и удаление и владельцу."><input type="checkbox" :checked="selectedMapImage?.locked" @change="onLockChange"> <Icon name="lock" /> Заблокировать</label>
-        <button class="small danger wide" @click="removeImage"><Icon name="trash-2" /> Удалить картинку</button>
+        <button class="small danger wide" data-tip="Удалить выбранную картинку (Delete)" @click="removeImage"><Icon name="trash-2" /> Удалить картинку</button>
       </div>
     </div>
     <div class="tab-pane tab-pane-flex" :class="{ active: activeTab === 'tab-drawing' }">

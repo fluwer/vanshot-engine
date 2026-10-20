@@ -11,6 +11,7 @@ import MusicPanel from './MusicPanel.vue';
 import DrawingPanel from './DrawingPanel.vue';
 import EffectsPanel from '../gm-panel/EffectsPanel.vue';
 import RulerPanel from '../gm-panel/RulerPanel.vue';
+import ViewPanel from '../gm-panel/ViewPanel.vue';
 import LocationBadge from '../gm-panel/LocationBadge.vue';
 import ActionRailPanel from './ActionRailPanel.vue';
 import MyImagesPanel from './MyImagesPanel.vue';
@@ -54,6 +55,7 @@ createApp(MusicPanel, { bridge }).mount('#music-panel-vue-root');
 createApp(DrawingPanel, { bridge }).mount('#drawing-panel-vue-root');
 createApp(EffectsPanel, { bridge }).mount('#effects-panel-vue-root');
 createApp(RulerPanel, { bridge }).mount('#ruler-panel-vue-root');
+createApp(ViewPanel).mount('#view-panel-vue-root'); // «Вид»: масштаб интерфейса (общий с ГМ)
 
 // ---- Мои картинки: игрок правит СВОИ картинки на карте (после «Принять» ГМ) ----
 // Данные кормит player.js (state.mapImages, выбор картинки на канвасе). Блок по

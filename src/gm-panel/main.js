@@ -12,6 +12,7 @@ import LocationBadge from './LocationBadge.vue';
 import ImageProposals from './ImageProposals.vue';
 import CombatStrip from './CombatStrip.vue';
 import RulerPanel from './RulerPanel.vue';
+import ViewPanel from './ViewPanel.vue';
 import GameSettingsPanel from './GameSettingsPanel.vue';
 import VideoPanel from './VideoPanel.vue';
 
@@ -164,6 +165,7 @@ createApp(EffectsPanel, { bridge, gm: true }).mount('#effects-panel-vue-root');
 
 // ---- Линейка (пункт левой панели; режим ведёт сама панель по dock:change) ----
 createApp(RulerPanel, { bridge }).mount('#ruler-panel-vue-root');
+createApp(ViewPanel).mount('#view-panel-vue-root'); // «Вид»: масштаб интерфейса (общий с игроком)
 
 // ---- Ролики (пункт «Ролики»): библиотека, показ всем, удаление. Данные — state.videos / state.video ----
 const videoStore = reactive({ videos: [], video: null });
