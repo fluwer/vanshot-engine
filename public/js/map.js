@@ -89,7 +89,10 @@ function getAvatarImage(url, onLoad) {
 }
 
 const ZOOM_MIN = 0.6;
-const ZOOM_MAX = 3;
+const ZOOM_MAX = 12;              // клетка 16 px × 12 = 192 px: фишку можно рассмотреть вплотную
+const FOG_BRUSH_MAX = 12;         // сторона квадратной кисти тумана, клеток (ползунок в панели — тот же предел)
+const DRAW_WIDTH_PANEL_MAX = 16;  // толщина линии, до которой доходят клавиши и колесо (ползунок в панели — тот же предел)
+const TOOL_WHEEL_STEP_PX = 40;    // Ctrl+колесо: сколько прокрутки на один шаг размера кисти/толщины (щелчок мыши = 100)
 const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
 
 // Туман войны красит клетки сетки игры: ключ клетки «x,y» — тот же индекс, что у
@@ -180,6 +183,7 @@ function createMapController({ canvas, role, myCharacterId }) {
   let fogEdit = false;
   let fogTool = 'brush';       // 'brush' | 'zone'
   let fogHide = true;          // true = скрыть (красим чёрным), false = открыть
+  let fogShiftHeld = false;    // Shift зажат — кисть временно работает в обратном режиме (см. fogHideNow)
   let fogBrush = 3;            // сторона квадратной кисти в клетках (1 = одна клетка)
   let fogSelection = null;     // { x0,y0,x1,y1 } мировой прямоугольник при зоне
   let fogHoverPt = null;       // точка указателя на канвасе (px) — по ней рисуется рамка клеток под кистью
@@ -464,13 +468,18 @@ function createMapController({ canvas, role, myCharacterId }) {
     return !['range', 'checkbox', 'radio', 'button', 'file', 'submit'].includes(el.type);
   }
 
+  // Горячие клавиши карты молчат, если их уже обработали, идёт ввод в поле, открыта модалка или заставка локации.
+  function keysBlocked(e) {
+    if (e.defaultPrevented || e.isComposing) return true;
+    if (isTypingTarget(e.target) || isTypingTarget(document.activeElement)) return true;
+    return !!(document.querySelector('.modal-backdrop') || document.querySelector('.scene-intro-overlay.show'));
+  }
+
   // Горячие клавиши выбранной картинки: Delete/Backspace — удалить, Ctrl/Cmd+D — дубликат, C — режим обрезки,
   // Enter/Esc — выйти из обрезки. Буквы — по физической клавише (event.code): на русской раскладке key = «в»/«с».
   // capture: раньше обработчика Esc у Dock (он пропускает уже обработанное — defaultPrevented).
   function onImageKeydown(e) {
-    if (e.defaultPrevented || e.isComposing || !imageEditActive() || !selectedMapImageId) return;
-    if (isTypingTarget(e.target) || isTypingTarget(document.activeElement)) return;
-    if (document.querySelector('.modal-backdrop') || document.querySelector('.scene-intro-overlay.show')) return;
+    if (!imageEditActive() || !selectedMapImageId || keysBlocked(e)) return;
     const m = currentState && currentState.mapImages && currentState.mapImages.find((mi) => mi.id === selectedMapImageId);
     if (!m || !canEditImage(m)) return;
     const ctrl = e.ctrlKey || e.metaKey;
@@ -1257,7 +1266,7 @@ function createMapController({ canvas, role, myCharacterId }) {
   function paintBrushAt(sx, sy) {
     const cells = brushFootprint(sx, sy);
     if (!cells) return;
-    paintCells(cells, fogHide);
+    paintCells(cells, fogHideNow());
     fogHoverPt = { x: sx, y: sy };
     draw();
   }
@@ -1269,7 +1278,7 @@ function createMapController({ canvas, role, myCharacterId }) {
   }
 
   function applyZone(sel) {
-    paintCells(zoneCells(sel), fogHide);
+    paintCells(zoneCells(sel), fogHideNow());
     draw();
   }
   // -----------------------------------------------------------------------
@@ -1556,6 +1565,7 @@ function createMapController({ canvas, role, myCharacterId }) {
 
   canvas.addEventListener('mousemove', (e) => {
     if (activePointers.size > 0) return; // активный жест сам управляет курсором (см. pointerdown/endPointer)
+    setFogShift(e.shiftKey);
     const pt = eventToCanvasPoint(e);
     lastHoverPoint = pt;
     canvas.style.cursor = cursorForHover(pt.x, pt.y);
@@ -1567,6 +1577,123 @@ function createMapController({ canvas, role, myCharacterId }) {
     setFogHoverPoint(null);
   });
 
+  // --- Клавиши и колесо инструментов «Туман» (только ГМ) и «Рисунок» (обе роли) ----------------------------
+  // Работают, пока открыт блок инструмента (fogEdit / drawMode). Буквы и скобки — по event.code: на русской
+  // раскладке key = «ч»/«х». Панели узнают о смене режима, размера и толщины по событиям document
+  // 'fog:change' { hide, effective, brush } и 'draw:change' { tool, width }.
+  //   Туман:   X — Скрыть ↔ Открыть, Shift (пока зажат) — обратный режим, [ ] и Ctrl+колесо — размер кисти.
+  //   Рисунок: X — Перо ↔ Ластик, Ctrl+Z — отменить своё последнее действие, [ ] и Ctrl+колесо — толщина.
+  // Во время жеста с нажатой кнопкой (штрих, ластик) инструмент и толщину не меняем: штрих ушёл бы не таким, как показан.
+
+  // Режим кисти с учётом зажатого Shift: «Скрыть» с Shift стирает туман, «Открыть» с Shift — закрашивает.
+  function fogHideNow() { return fogShiftHeld ? !fogHide : fogHide; }
+
+  function emitFogChange() {
+    document.dispatchEvent(new CustomEvent('fog:change', { detail: { hide: fogHide, effective: fogHideNow(), brush: fogBrush } }));
+  }
+
+  function emitDrawChange() {
+    document.dispatchEvent(new CustomEvent('draw:change', { detail: { tool: drawTool, width: drawWidth } }));
+  }
+
+  function setFogHide(v) {
+    const next = !!v;
+    if (next === fogHide) return;
+    fogHide = next;
+    if (fogHoverPt) draw(); // рамка кисти меняет цвет
+    emitFogChange();
+  }
+
+  // Размер кисти — сторона квадрата в клетках, 1…FOG_BRUSH_MAX (кисть всегда красит хотя бы клетку).
+  function setFogBrush(n) {
+    const next = clamp(Math.round(n) || 1, 1, FOG_BRUSH_MAX);
+    if (next === fogBrush) return;
+    fogBrush = next;
+    if (fogHoverPt) draw();
+    emitFogChange();
+  }
+
+  // Shift зажат или отпущен. Состояние держим всегда (не только в режиме тумана), панель и кадр обновляем только в нём.
+  function setFogShift(held) {
+    if (held === fogShiftHeld) return;
+    fogShiftHeld = held;
+    if (!fogEdit) return;
+    if (fogHoverPt || fogSelection) draw();
+    emitFogChange();
+  }
+
+  function setDrawTool(t) {
+    const next = t === 'eraser' ? 'eraser' : 'pen';
+    if (next === drawTool) return;
+    drawTool = next;
+    if (drawMode && lastHoverPoint) canvas.style.cursor = cursorForHover(lastHoverPoint.x, lastHoverPoint.y);
+    emitDrawChange();
+  }
+
+  function setDrawWidth(n) {
+    const next = clamp(Math.round(n) || 4, 1, 24);
+    if (next === drawWidth) return;
+    drawWidth = next;
+    emitDrawChange();
+  }
+
+  const drawGestureActive = () => !!currentStroke || drawErasing;
+  const stepDrawWidth = (delta) => setDrawWidth(clamp(drawWidth + delta, 1, DRAW_WIDTH_PANEL_MAX));
+
+  function onToolKeydown(e) {
+    const fogKeys = role === 'gm' && fogEdit;
+    if (!fogKeys && !drawMode) return;
+    if (keysBlocked(e)) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) {
+      // Ctrl/Cmd+Z — то же, что ПКМ в режиме рисования: сервер снимает последний штрих именно этого автора.
+      if (!fogKeys && drawMode && !vfxPlaceMode && e.code === 'KeyZ' && !e.altKey && !e.shiftKey
+          && !drawGestureActive() && drawUndoHandler) {
+        e.preventDefault();
+        drawUndoHandler();
+      }
+      return;
+    }
+    if (e.code === 'KeyX') {
+      if (e.repeat) return; // удержание клавиши не должно мигать режимом
+      if (fogKeys) setFogHide(!fogHide);
+      else if (!drawGestureActive()) setDrawTool(drawTool === 'pen' ? 'eraser' : 'pen');
+      else return;
+      e.preventDefault();
+    } else if (e.code === 'BracketLeft' || e.code === 'BracketRight') {
+      const dir = e.code === 'BracketRight' ? 1 : -1;
+      if (fogKeys) setFogBrush(fogBrush + dir);
+      else if (!drawGestureActive()) stepDrawWidth(dir);
+      else return;
+      e.preventDefault();
+    }
+  }
+  document.addEventListener('keydown', onToolKeydown, true);
+
+  // Shift тянем в обе стороны: keyup может пропасть (окно потеряло фокус), поэтому ещё blur и сверка с событиями мыши.
+  document.addEventListener('keydown', (e) => { if (e.key === 'Shift') setFogShift(true); }, true);
+  document.addEventListener('keyup', (e) => { if (e.key === 'Shift') setFogShift(false); }, true);
+  window.addEventListener('blur', () => setFogShift(false));
+
+  // Ctrl/Cmd+колесо над картой: размер кисти тумана («Кисть») или толщина линии вместо зума. Копилка нужна, чтобы
+  // тачпад с мелкими deltaY не «улетал», а щелчок мыши (≈100) давал ровно один шаг; вверх — больше, как у зума.
+  // Возвращает true, если колесо отдано инструменту (зумить не нужно).
+  let toolWheelAcc = 0;
+  function toolWheel(e) {
+    const brushOn = role === 'gm' && fogEdit && fogTool === 'brush';
+    if (!brushOn && !drawMode) return false;
+    if (!brushOn && drawGestureActive()) return true;
+    const dy = e.deltaY * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1);
+    if (toolWheelAcc * dy < 0) toolWheelAcc = 0; // направление сменилось
+    toolWheelAcc += dy;
+    if (Math.abs(toolWheelAcc) >= TOOL_WHEEL_STEP_PX) {
+      const dir = toolWheelAcc < 0 ? 1 : -1;
+      toolWheelAcc = 0;
+      if (brushOn) setFogBrush(fogBrush + dir);
+      else stepDrawWidth(dir);
+    }
+    return true;
+  }
+
   canvas.addEventListener('pointerdown', (e) => {
     canvas.setPointerCapture(e.pointerId);
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -1575,6 +1702,7 @@ function createMapController({ canvas, role, myCharacterId }) {
       const isMouse = e.pointerType === 'mouse';
       // ГМ рисует туман: тач/перо или ЛКМ перехватывают жест под кисть/зону.
       if (role === 'gm' && fogEdit && (!isMouse || e.button === 0)) {
+        setFogShift(e.shiftKey); // клавиша могла быть отпущена вне страницы
         fogPainting = true;
         canvas.style.cursor = 'crosshair';
         const pt = eventToCanvasPoint(e);
@@ -1709,6 +1837,7 @@ function createMapController({ canvas, role, myCharacterId }) {
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     // Рамка кисти следует за мышью и во время панорамирования (hover-обработчик на нажатой кнопке молчит).
     if (fogHoverPt && e.pointerType === 'mouse') fogHoverPt = eventToCanvasPoint(e);
+    if (fogPainting && e.pointerType === 'mouse') setFogShift(e.shiftKey);
 
     if (rulerDragging) {
       const pt = eventToCanvasPoint(e);
@@ -1928,6 +2057,7 @@ function createMapController({ canvas, role, myCharacterId }) {
 
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
+    if ((e.ctrlKey || e.metaKey) && toolWheel(e)) return;
     const pt = eventToCanvasPoint(e);
     const before = screenToWorld(pt.x, pt.y);
     const factor = Math.exp(-e.deltaY * 0.001);
@@ -2382,9 +2512,10 @@ function createMapController({ canvas, role, myCharacterId }) {
       const w = (fogMarks.i1 - fogMarks.i0 + 1) * cs;
       const h = (fogMarks.j1 - fogMarks.j0 + 1) * cs;
       ctx.save();
-      ctx.fillStyle = fogHide ? 'rgba(255,90,90,0.16)' : 'rgba(120,200,255,0.16)';
+      const hiding = fogHideNow();
+      ctx.fillStyle = hiding ? 'rgba(255,90,90,0.16)' : 'rgba(120,200,255,0.16)';
       ctx.fillRect(x, y, w, h);
-      ctx.strokeStyle = fogHide ? 'rgba(255,90,90,0.95)' : 'rgba(120,200,255,0.95)';
+      ctx.strokeStyle = hiding ? 'rgba(255,90,90,0.95)' : 'rgba(120,200,255,0.95)';
       ctx.lineWidth = 2 / camera.zoom;
       if (fogSelection) ctx.setLineDash([6 / camera.zoom, 4 / camera.zoom]);
       ctx.strokeRect(x, y, w, h);
@@ -2409,9 +2540,8 @@ function createMapController({ canvas, role, myCharacterId }) {
     // выбор ГМ: иначе забытый выбранный токен можно случайно сдвинуть тапом.
     setFogEditMode: (v) => { fogEdit = !!v; if (fogEdit && role === 'gm') clearSelection(); if (!fogEdit) { fogSelection = null; fogPainting = false; fogHoverPt = null; } draw(); if (lastHoverPoint) canvas.style.cursor = cursorForHover(lastHoverPoint.x, lastHoverPoint.y); },
     setFogTool: (t) => { fogTool = t === 'zone' ? 'zone' : 'brush'; draw(); },
-    setFogHide: (v) => { fogHide = !!v; },
-    // Размер кисти — сторона квадрата в клетках, минимум 1 (кисть всегда красит хотя бы клетку).
-    setFogBrush: (n) => { fogBrush = Math.max(1, Math.round(n) || 1); if (fogHoverPt) draw(); },
+    setFogHide,
+    setFogBrush,
     revealAllFog: () => { fogVer++; fogSet.clear(); draw(); if (fogChangeHandler) fogChangeHandler(getFogBlob()); },
     hideAllFog: () => { const b = getKnownMapBounds(); if (b) fillFogRect(b); draw(); if (fogChangeHandler) fogChangeHandler(getFogBlob()); },
     applyFogBlob,
@@ -2448,8 +2578,8 @@ function createMapController({ canvas, role, myCharacterId }) {
     isImageCropMode: () => imageCropMode,
     getSelectedMapImageId: () => selectedMapImageId,
     setDrawMode: (v) => { drawMode = !!v; if (drawMode && role === 'gm') clearSelection(); if (!drawMode) { currentStroke = null; drawErasing = false; erasedThisGesture = null; } draw(); if (lastHoverPoint) canvas.style.cursor = cursorForHover(lastHoverPoint.x, lastHoverPoint.y); },
-    setDrawTool: (t) => { drawTool = t === 'eraser' ? 'eraser' : 'pen'; },
-    setDrawWidth: (n) => { drawWidth = clamp(Math.round(n) || 4, 1, 24); },
+    setDrawTool,
+    setDrawWidth,
     setDrawAddHandler: (fn) => { drawAddHandler = fn; },
     setDrawEraseHandler: (fn) => { drawEraseHandler = fn; },
     setDrawUndoHandler: (fn) => { drawUndoHandler = fn; },

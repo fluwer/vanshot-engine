@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import Modal from './Modal.vue';
 import { useDock } from './useDock.js';
 import Icon from './Icon.vue';
@@ -35,6 +35,7 @@ applyEditMode(activeEditMode.value, null);
 // ---- Туман войны ----
 const fogTool = ref('brush');
 const fogHide = ref(true);
+const fogNow = ref(true); // режим кисти прямо сейчас: с зажатым Shift он обратный fogHide
 const fogBrush = ref(3); // сторона квадрата в клетках (1…12); в map.js это значение по умолчанию
 props.bridge.mapController.setFogBrush(fogBrush.value);
 function setFogTool(tool) {
@@ -152,7 +153,27 @@ function removeImage() {
   window.imageTools.removeImage(props.bridge.socket, id);
 }
 
+// Клавиши и колесо карты (X, Shift, [ ], Ctrl+колесо, Ctrl+Z — map.js) меняют режим кисти, её размер, инструмент
+// рисования и толщину без участия панели: узнаём об этом по событиям document и обновляем подсветку и ползунки.
+// Заливку ползунка до бегунка (--p) ведёт ui.js по событиям input: программную смену значения догоняем сами.
+const syncSliders = () => nextTick(() => { if (window.UI) window.UI.syncRanges(); });
+function onFogChange(e) {
+  const d = e.detail || {};
+  fogHide.value = !!d.hide;
+  fogNow.value = !!d.effective;
+  fogBrush.value = d.brush;
+  syncSliders();
+}
+function onDrawChange(e) {
+  const d = e.detail || {};
+  drawTool.value = d.tool;
+  drawWidth.value = d.width;
+  syncSliders();
+}
+
 onMounted(() => {
+  document.addEventListener('fog:change', onFogChange);
+  document.addEventListener('draw:change', onDrawChange);
   // Клик/драг по картинке прямо на канвасе — синхронизируем выделение с панелью.
   props.bridge.mapController.setMapImageSelectHandler(() => {
     selectedMapImageId.value = props.bridge.mapController.getSelectedMapImageId();
@@ -162,6 +183,8 @@ onMounted(() => {
   document.addEventListener('paste', onPaste);
 });
 onBeforeUnmount(() => {
+  document.removeEventListener('fog:change', onFogChange);
+  document.removeEventListener('draw:change', onDrawChange);
   document.removeEventListener('paste', onPaste);
 });
 
@@ -278,7 +301,7 @@ function removeLocation(locationId) {
   <!-- Вкладок нет: пункт выбирается в левой панели (Dock), см. activeTab выше. -->
   <div class="overlay-body">
     <div class="tab-pane tab-pane-flex" :class="{ active: activeTab === 'tab-fog' }">
-      <p class="muted small fog-hint">Закрашивайте клетки сетки — игроки видят закрашенное чёрным. Пока блок открыт, фишки не выбираются.</p>
+      <p class="muted small fog-hint">Закрашивайте клетки сетки — игроки видят закрашенное чёрным. X — «Скрыть»/«Открыть» (пока держите Shift — наоборот), [ ] или Ctrl+колесо — размер кисти. Пока блок открыт, фишки не выбираются.</p>
       <div class="fog-group">
         <div class="row" style="gap:4px">
           <button class="fog-btn fog-tool" :class="{ active: fogTool === 'brush' }" title="Кисть" @click="setFogTool('brush')"><Icon name="brush" /> Кисть</button>
@@ -288,8 +311,8 @@ function removeLocation(locationId) {
       <div class="fog-group">
         <span class="fog-label">Режим</span>
         <div class="row" style="gap:4px">
-          <button class="fog-btn fog-mode" :class="{ active: fogHide }" @click="setFogHide(true)">Скрыть</button>
-          <button class="fog-btn fog-mode" :class="{ active: !fogHide }" @click="setFogHide(false)">Открыть</button>
+          <button class="fog-btn fog-mode" :class="{ active: fogNow }" data-tip="Закрашивать туман (X — переключить, Shift — на время наоборот)" @click="setFogHide(true)">Скрыть</button>
+          <button class="fog-btn fog-mode" :class="{ active: !fogNow }" data-tip="Стирать туман (X — переключить, Shift — на время наоборот)" @click="setFogHide(false)">Открыть</button>
         </div>
       </div>
       <div class="fog-group">
@@ -326,7 +349,7 @@ function removeLocation(locationId) {
       </div>
     </div>
     <div class="tab-pane tab-pane-flex" :class="{ active: activeTab === 'tab-drawing' }">
-      <p class="muted small fog-hint">Рисуйте по карте — линии видят все. ПКМ — отменить последний штрих. Пока блок открыт, фишки не выбираются.</p>
+      <p class="muted small fog-hint">Рисуйте по карте — линии видят все. ПКМ или Ctrl+Z — отменить последний штрих, X — перо/ластик, [ ] или Ctrl+колесо — толщина. Пока блок открыт, фишки не выбираются.</p>
       <div class="fog-group">
         <div class="row" style="gap:4px">
           <button class="fog-btn draw-tool" :class="{ active: drawTool === 'pen' }" title="Перо" aria-label="Перо" @click="setDrawTool('pen')"><Icon name="pen-line" /> Перо</button>
