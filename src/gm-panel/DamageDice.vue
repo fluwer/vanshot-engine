@@ -1,9 +1,12 @@
 <script setup>
+import { computed } from 'vue';
 import Icon from './Icon.vue';
+import { useGame } from './useGame';
 
-// Кубик урона: кнопки d4…d12 в нижней панели ГМ и игрока. Бросок только показывается всем
+// Кубик урона: кнопки dN в нижней панели ГМ и игрока. Бросок только показывается всем
 // (кубик на экране + запись в журнале); HP не меняется — урон ГМ применяет на карточке цели
-// (поле «Урон», броня учтена). Допустимые размеры проверяет сервер (config.DAMAGE_DICE).
+// (поле «Урон», броня учтена). Набор кубиков — из настроек игры (check.damageDice); допустимые
+// размеры проверяет сервер.
 // characterId: у ГМ — выбранная фишка (нет цели — бросок «от Мастера»); у игрока не важен —
 // сервер бросает за его собственного персонажа.
 defineProps({
@@ -11,7 +14,8 @@ defineProps({
   characterId: { type: String, default: null },
 });
 
-const DICE = [4, 6, 8, 10, 12];
+const { check } = useGame();
+const DICE = computed(() => check.value.damageDice || []);
 </script>
 
 <template>

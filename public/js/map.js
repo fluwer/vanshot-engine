@@ -1689,6 +1689,8 @@ function createMapController({ canvas, role, myCharacterId }) {
   // Подписи рисуются шрифтом интерфейса: как только он догрузится — перечитать токены и перерисовать
   // (иначе первый кадр остался бы с запасным шрифтом).
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { readTheme(); draw(); });
+  // ГМ сменил цвета игры (тема, цвета фракций — public/js/game.js): canvas читает токены сам, перечитываем и перерисовываем.
+  document.addEventListener('theme:change', () => { readTheme(); draw(); });
 
   function draw() {
     ensureCanvasSize();

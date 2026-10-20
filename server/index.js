@@ -1,8 +1,10 @@
+const fs = require('fs');
 const path = require('path');
 const http = require('http');
 const express = require('express');
 const { Server } = require('socket.io');
 const gameState = require('./gameState');
+const gameConfig = require('./gameConfig');
 const config = require('./config');
 
 const app = express();
@@ -22,6 +24,40 @@ app.get('/avatars/presets/manifest.json', (req, res) => { noCache(res); res.json
 app.get('/assets/music/manifest.json', (req, res) => { noCache(res); res.json(gameState.listAudio('music')); });
 app.get('/assets/sounds/manifest.json', (req, res) => { noCache(res); res.json(gameState.listAudio('sounds')); });
 
+// Страницы ГМ и игрока отдаём с подставленными настройками игры: window.GAME_BOOT (название, тема,
+// подписи — клиент применяет их до отрисовки, без мерцания и гонки с загрузкой конфига) и <title>.
+// Дальше изменения приходят в state.game. Метка <!--GAME_BOOT--> стоит в <head> HTML.
+const PAGE_ROLES = { 'gm.html': 'Мастер', 'player.html': 'Игрок' };
+const pageCache = new Map();
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function renderPage(name) {
+  const file = path.join(PUBLIC_DIR, name);
+  const { mtimeMs } = fs.statSync(file);
+  let cached = pageCache.get(name);
+  if (!cached || cached.mtimeMs !== mtimeMs) {
+    cached = { mtimeMs, html: fs.readFileSync(file, 'utf-8') };
+    pageCache.set(name, cached);
+  }
+  const game = gameConfig.get();
+  // JSON внутри <script>: «<» экранируем (иначе «</script>» в названии оборвёт скрипт), U+2028/2029 ломают JS-строки.
+  const LS = String.fromCharCode(0x2028);
+  const PS = String.fromCharCode(0x2029);
+  const boot = JSON.stringify(game).replace(/</g, '\\u003c').split(LS).join('\\u2028').split(PS).join('\\u2029');
+  return cached.html
+    .replace('<!--GAME_BOOT-->', () => `<script>window.GAME_BOOT=${boot};</script>`)
+    .replace(/<title>[\s\S]*?<\/title>/, () => `<title>${escapeHtml(`${game.title} — ${PAGE_ROLES[name]}`)}</title>`);
+}
+Object.keys(PAGE_ROLES).forEach((name) => {
+  app.get(`/${name}`, (req, res, next) => {
+    try {
+      noCache(res);
+      res.type('html').send(renderPage(name));
+    } catch (err) {
+      next(); // нет файла — пусть ответит static (404)
+    }
+  });
+});
+
 // Всё, что пишет программа или подкладывает ГМ, лежит в data/ — это единственный каталог, вынесенный на
 // диск хоста в Docker (public/ и server/ запечены в образ и пересоздаются при сборке). Отдаём эти папки
 // под прежними адресами ПЕРЕД public: файл из data главнее одноимённого из образа (свою картинку можно
@@ -32,6 +68,7 @@ app.use('/avatars/uploads', express.static(store.avatarUploads));
 app.use('/avatars/map-images', express.static(store.mapImages));
 app.use('/assets/music', express.static(store.music));
 app.use('/assets/sounds', express.static(store.sounds));
+app.use('/assets/sfx', express.static(store.sfx)); // свои звуки интерфейса (экран «Игра»); стандартные — из public/assets/sfx
 app.use(express.static(PUBLIC_DIR));
 
 // Текст подсказки для команды чата /help.
@@ -150,7 +187,7 @@ io.on('connection', (socket) => {
     if (socket.data.role === 'gm') rollerId = typeof characterId === 'string' ? characterId : null;
     else if (socket.data.role === 'player' && socket.data.characterId) rollerId = socket.data.characterId;
     else return;
-    if (gameState.rollDamage(rollerId, sides, 'Мастер')) broadcastState(); // sides — строго число из DAMAGE_DICE
+    if (gameState.rollDamage(rollerId, sides, 'Мастер')) broadcastState(); // sides — строго число из check.damageDice (настройки игры)
   });
 
   socket.on('dicelog:clear', () => {
@@ -397,6 +434,83 @@ io.on('connection', (socket) => {
   socket.on('weather:set', (payload) => {
     if (socket.data.role !== 'gm') return;
     if (gameState.setWeather(payload)) broadcastState();
+  });
+
+  // Настройки игры (экран «Игра» у ГМ): название, тема, подписи, параметры проверок. Правка — частичный
+  // объект; gameConfig.update проверяет каждое поле и при любой ошибке не меняет ничего (ответ — ack).
+  // «Показывать примеры из образа» меняет списки музыки, звуков и готовых аватаров: клиенты перечитывают
+  // манифесты, а трек, которого в списке больше нет, перестаёт играть.
+  function afterGameConfigChange(showBundledBefore) {
+    if (gameConfig.get().showBundled !== showBundledBefore) {
+      gameState.stopMusicIfTrackGone();
+      io.emit('sound:manifest-updated');
+      io.emit('music:manifest-updated');
+    }
+    broadcastState();
+  }
+
+  socket.on('game:update', (patch, ack) => {
+    if (socket.data.role !== 'gm') return;
+    const before = gameConfig.get().showBundled;
+    const result = gameConfig.update(patch);
+    if (result.ok) afterGameConfigChange(before);
+    if (typeof ack === 'function') ack(result.ok ? { ok: true } : { ok: false, reason: result.reason });
+  });
+
+  // Вернуть раздел настроек (или 'all') к примеру игры.
+  socket.on('game:reset', (payload, ack) => {
+    if (socket.data.role !== 'gm') return;
+    const section = payload && typeof payload.section === 'string' ? payload.section : '';
+    const before = gameConfig.get().showBundled;
+    const result = gameConfig.reset(section);
+    if (result.ok) afterGameConfigChange(before);
+    if (typeof ack === 'function') ack(result.ok ? { ok: true } : { ok: false, reason: result.reason });
+  });
+
+  // Звуки интерфейса (кубик, начало боя, заставка локации): { kind, dataUrl } / { kind }. Только мастер.
+  socket.on('sfx:upload', (payload, ack) => {
+    if (socket.data.role !== 'gm') return;
+    const { kind, dataUrl } = payload || {};
+    const result = gameState.saveSfx(kind, dataUrl);
+    if (result.ok) broadcastState();
+    if (typeof ack === 'function') ack(result.ok ? { ok: true, url: result.url } : { ok: false, reason: result.reason });
+  });
+
+  socket.on('sfx:reset', (payload, ack) => {
+    if (socket.data.role !== 'gm') return;
+    const result = gameState.resetSfx((payload || {}).kind);
+    if (result.ok) broadcastState();
+    if (typeof ack === 'function') ack(result.ok ? { ok: true } : { ok: false, reason: result.reason });
+  });
+
+  // Свои готовые картинки героев/NPC (data/presets): { name, dataUrl } / { url }. Только мастер.
+  socket.on('preset:upload', (payload, ack) => {
+    if (socket.data.role !== 'gm') return;
+    const { name, dataUrl } = payload || {};
+    const result = gameState.saveUserPreset(name, dataUrl);
+    if (typeof ack === 'function') ack(result.ok ? { ok: true, url: result.url } : { ok: false, reason: result.reason });
+  });
+
+  socket.on('preset:remove', (payload, ack) => {
+    if (socket.data.role !== 'gm') return;
+    const result = gameState.removeUserPreset((payload || {}).url);
+    if (result.ok) broadcastState(); // у героев и NPC с этой картинкой аватар сброшен
+    if (typeof ack === 'function') ack(result.ok ? { ok: true } : { ok: false, reason: result.reason });
+  });
+
+  // Каталог навыков: { name, icon, description, oldName? } / { name }. Переименование и удаление проходят по героям.
+  socket.on('skill:save', (payload, ack) => {
+    if (socket.data.role !== 'gm') return;
+    const result = gameState.saveSkill(payload);
+    if (result.ok) broadcastState();
+    if (typeof ack === 'function') ack(result.ok ? { ok: true } : { ok: false, reason: result.reason });
+  });
+
+  socket.on('skill:remove', (payload, ack) => {
+    if (socket.data.role !== 'gm') return;
+    const result = gameState.removeSkill((payload || {}).name);
+    if (result.ok) broadcastState();
+    if (typeof ack === 'function') ack(result.ok ? { ok: true } : { ok: false, reason: result.reason });
   });
 
   socket.on('item:give', ({ characterId, item }) => {

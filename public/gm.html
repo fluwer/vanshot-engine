@@ -9,6 +9,8 @@
 <link rel="stylesheet" href="css/tokens.css">
 <link rel="stylesheet" href="css/controls.css">
 <link rel="stylesheet" href="css/style.css">
+<!--GAME_BOOT-->
+<script src="js/game.js"></script>
 </head>
 <body>
   <div class="map-stage">
@@ -45,6 +47,11 @@
 
     <div class="dock-block" id="sound-panel">
       <div id="sound-panel-vue-root"></div>
+    </div>
+
+    <!-- Настройки игры: название и тема, звуки и ассеты, подписи и навыки, параметры проверок (только ГМ) -->
+    <div class="dock-block" id="game-panel">
+      <div id="game-panel-vue-root"></div>
     </div>
 
     <!-- Правая колонка «Участники»: открыта вместе с левым блоком, сворачивается в кнопку-«людей» у края -->

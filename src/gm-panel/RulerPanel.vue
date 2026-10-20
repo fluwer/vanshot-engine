@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue';
 import { useDock } from './useDock.js';
+import { useGame } from './useGame';
 
 // Роле-независимая панель «Линейка» — переиспользуется и в GM-панели, и в
 // player-panel (см. main.js обоих бандлов), как EffectsPanel. Меряет расстояние
@@ -26,6 +27,9 @@ watch(() => dock.current.value === 'ruler', (on) => {
   if (!on) reading.value = null;
 });
 
+const { res } = useGame(); // ресурс движения (по умолчанию «Энергия») — из настроек игры
+const energyName = computed(() => res('energy').label.toLowerCase());
+
 const straightText = computed(() => (reading.value ? String(reading.value.straight).replace('.', ',') : ''));
 
 function clear() {
@@ -42,7 +46,7 @@ function clear() {
       </p>
       <div class="ruler-reading">
         <div class="ruler-row">
-          <span class="muted" title="Манхэттен: столько энергии стоит такой ход в бою">Ход (как энергия)</span>
+          <span class="muted" :title="`Манхэттен: столько ресурса «${energyName}» стоит такой ход в бою`">Ход (как {{ energyName }})</span>
           <strong>{{ reading ? `${reading.moves} кл.` : '—' }}</strong>
         </div>
         <div class="ruler-row">

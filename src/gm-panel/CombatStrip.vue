@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue';
 import Icon from './Icon.vue';
+import { useGame } from './useGame';
 
 // Роле-независимая полоса боя («Раунд N · Ход: Имя») сверху по центру — видна ТОЛЬКО
 // в бою, клик раскрывает порядок хода. Заменяет пустое окно «Бой» у игрока и
@@ -11,8 +12,8 @@ const props = defineProps({
 
 const expanded = ref(false);
 
-// Фракции NPC — единый справочник public/js/icons.js (подпись, значок, цвет).
-const FACTIONS = window.FACTIONS;
+// Фракции NPC (подпись, значок, цвет) — из настроек игры.
+const { faction } = useGame();
 
 const currentEntry = computed(() => {
   const { order, currentIndex } = props.store.combat;
@@ -22,7 +23,7 @@ const currentEntry = computed(() => {
 function factionFor(entry) {
   if (entry.type !== 'npc') return null;
   const npc = (props.store.npcs || []).find((n) => n.id === entry.id);
-  return npc ? FACTIONS[npc.faction || 'neutral'] || FACTIONS.neutral : null;
+  return npc ? faction(['enemy', 'ally', 'neutral'].includes(npc.faction) ? npc.faction : 'neutral') : null;
 }
 
 function turnRowClass(entry, index) {

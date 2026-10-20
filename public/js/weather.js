@@ -331,6 +331,7 @@
 
   if (ctx) {
     readColors();
+    document.addEventListener('theme:change', readColors); // тема игры сменилась — снег/иней берут новые цвета
     document.addEventListener('visibilitychange', () => { last = 0; if (!document.hidden) kick(); });
     if (reducedQuery && reducedQuery.addEventListener) {
       reducedQuery.addEventListener('change', () => { emitChange(); kick(); });

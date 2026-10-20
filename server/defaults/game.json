@@ -1,0 +1,37 @@
+{
+  "title": "Ван-Шот",
+  "subtitle": "Сквозь снег",
+  "showBundled": true,
+  "hiddenName": "Неизвестный",
+  "theme": { "accent": null, "bg": null, "text": null, "amber": null },
+  "sfx": { "diceRoll": null, "combatStart": null, "sceneEnter": null },
+  "attributes": {
+    "body": { "label": "Тело", "icon": "biceps-flexed" },
+    "mind": { "label": "Разум", "icon": "brain" },
+    "charisma": { "label": "Харизма", "icon": "message-circle" }
+  },
+  "resources": {
+    "hp": { "label": "HP", "short": "HP", "icon": "heart" },
+    "energy": { "label": "Энергия", "short": "Эн.", "icon": "zap" },
+    "resolve": { "label": "Решимость", "short": "Реш.", "icon": "sparkles" },
+    "armor": { "label": "Броня", "short": "Броня", "icon": "shield" }
+  },
+  "factions": {
+    "enemy": { "label": "Враг", "icon": "faction-enemy", "color": "#e5675d" },
+    "ally": { "label": "Союзник", "icon": "faction-ally", "color": "#5cc48d" },
+    "neutral": { "label": "Нейтрал", "icon": "faction-neutral", "color": "#9fb0c6" }
+  },
+  "check": {
+    "die": 20,
+    "critSuccess": 20,
+    "critFail": 1,
+    "bonus": { "cost": 1, "amount": 2 },
+    "initiativeAttr": "body",
+    "dcPresets": [
+      { "label": "Лёгкий", "value": 10 },
+      { "label": "Средний", "value": 14 },
+      { "label": "Сложный", "value": 18 }
+    ],
+    "damageDice": [4, 6, 8, 10, 12]
+  }
+}

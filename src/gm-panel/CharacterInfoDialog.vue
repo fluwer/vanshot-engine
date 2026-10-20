@@ -1,9 +1,10 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, reactive, watch } from 'vue';
 import Modal from './Modal.vue';
 import Icon from './Icon.vue';
 import AvatarEditor from './AvatarEditor.vue';
 import { vAutosize } from './autosize.js';
+import { useGame } from './useGame';
 
 const props = defineProps({
   character: { type: Object, required: true },
@@ -18,10 +19,9 @@ const title = ref('');
 const hook = ref('');
 const backstory = ref('');
 const notes = ref(''); // заметки ГМ о персонаже — игрокам не уходят (getPublicState)
-const body = ref(0);
-const mind = ref(0);
-const charisma = ref(0);
+const attrs = reactive({ body: 0, mind: 0, charisma: 0 });
 const skills = ref([]);
+const { attr, attrIds } = useGame(); // подписи атрибутов — из настроек игры
 
 // Поля инициализируются из character при открытии диалога и при смене героя, но НЕ при каждой
 // рассылке state (она подменяет объект героя): иначе любой чужой бросок или смена картинки
@@ -35,9 +35,7 @@ watch(
     hook.value = c.hook || '';
     backstory.value = c.backstory || '';
     notes.value = c.notes || '';
-    body.value = c.attributes?.body ?? 0;
-    mind.value = c.attributes?.mind ?? 0;
-    charisma.value = c.attributes?.charisma ?? 0;
+    attrIds.forEach((id) => { attrs[id] = c.attributes?.[id] ?? 0; });
     skills.value = [...(c.skills || [])];
   },
   { immediate: true },
@@ -56,7 +54,7 @@ function save() {
     hook: hook.value.trim(),
     backstory: backstory.value.trim(),
     notes: notes.value.trim(),
-    attributes: { body: Number(body.value) || 0, mind: Number(mind.value) || 0, charisma: Number(charisma.value) || 0 },
+    attributes: { body: Number(attrs.body) || 0, mind: Number(attrs.mind) || 0, charisma: Number(attrs.charisma) || 0 },
     skills: skills.value,
   });
   emit('close');
@@ -103,17 +101,9 @@ function remove() {
     <div class="form-field">
       <span class="form-field-label">Атрибуты</span>
       <div class="form-row">
-        <label class="form-subfield">
-          <span class="form-subfield-label">Тело</span>
-          <input type="number" v-model="body">
-        </label>
-        <label class="form-subfield">
-          <span class="form-subfield-label">Разум</span>
-          <input type="number" v-model="mind">
-        </label>
-        <label class="form-subfield">
-          <span class="form-subfield-label">Харизма</span>
-          <input type="number" v-model="charisma">
+        <label v-for="id in attrIds" :key="id" class="form-subfield">
+          <span class="form-subfield-label">{{ attr(id).label }}</span>
+          <input type="number" v-model="attrs[id]">
         </label>
       </div>
     </div>

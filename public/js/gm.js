@@ -3,24 +3,20 @@ const socket = io();
 // этот же сокет, а не создаёт свой — см. src/gm-panel/main.js.
 window.gmSocket = socket;
 
-// Название игры — из gameConfig.json, чтобы движок не был зашит под
-// конкретную игру (см. TODO).
-fetch('/gameConfig.json')
-  .then((r) => (r.ok ? r.json() : {}))
-  .catch(() => ({}))
-  .then((cfg) => {
-    if (cfg.title) document.title = `${cfg.title} — Мастер`;
-  });
-
 // ---- Аватары NPC (те же пресеты, что и у персонажей в player.js) — из
 // /avatars/presets/manifest.json, без хардкода списка ----
 let npcAvatarPresetUrls = [];
-fetch('/avatars/presets/manifest.json')
-  .then((r) => (r.ok ? r.json() : []))
-  .catch(() => [])
-  .then((list) => {
-    npcAvatarPresetUrls = (Array.isArray(list) ? list : []).map((p) => p.url);
-  });
+// Список готовых картинок читаем при загрузке и после каждого изменения (экран «Игра» зовёт refreshPresets:
+// ГМ загрузил/удалил свою картинку или скрыл примеры) — окна героев и NPC берут актуальный список у моста.
+function refreshPresets() {
+  return fetch('/avatars/presets/manifest.json', { cache: 'no-store' })
+    .then((r) => (r.ok ? r.json() : []))
+    .catch(() => [])
+    .then((list) => {
+      npcAvatarPresetUrls = (Array.isArray(list) ? list : []).map((p) => p.url);
+    });
+}
+refreshPresets();
 
 // Аватар из файла: квадрат maxSize×maxSize (обрезка по центру, чуть выше — лица), PNG с
 // прозрачностью — общая логика в public/js/imagetools.js (avatarFromFile).
@@ -43,6 +39,7 @@ window.gmBridge = {
   selectTarget: (type, id) => mapController.selectTarget(type, id),
   clearSelection: () => mapController.clearSelection(),
   getNpcAvatarPresetUrls: () => npcAvatarPresetUrls,
+  refreshPresets,
   resizeImage,
   npcColor: NPC_COLOR,
   npcFactionStyle: FACTION_STYLE, // { enemy|ally|neutral: { color, icon } } — как на токенах (map.js)
@@ -151,6 +148,7 @@ Dock.init({
     { id: 'locations', icon: 'map', label: 'Локации', title: 'Локации', block: 'maptools-panel', group: 1 },
     { id: 'combat', icon: 'swords', label: 'Бой', title: 'Бой', block: 'combat-panel', group: 1 },
     { id: 'sound', icon: 'volume-2', label: 'Звук', title: 'Звук', block: 'sound-panel', group: 1 },
+    { id: 'game', icon: 'sliders-horizontal', label: 'Игра', title: 'Настройки игры', block: 'game-panel', group: 1 },
   ],
   side: { id: 'characters-panel', title: 'Участники' },
 });
@@ -166,6 +164,7 @@ function requestReachable() {
 }
 
 socket.on('state', (state) => {
+  window.Game.update(state.game); // настройки игры (название, тема, подписи) — раньше всех, остальное их читает
   window.dcControlsPanelApp?.updateState(state.currentDc);
   window.locationBadgeApp?.updateState(state.activeLocationName);
   window.charactersPanelApp?.updateState(state.characters, state.npcs, state.skillsCatalog, state.locations);

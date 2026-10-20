@@ -28,7 +28,8 @@ function diceEntryParts(entry) {
       { text: ` ${attrLabel(entry.attribute)} ${sign}${entry.attrValue}` });
   }
   if (entry.resolveBonus) {
-    parts.push({ text: ' + ' }, { icon: 'sparkles', cls: 'ico-amber' }, { text: ` Решимость +${entry.resolveBonus}` });
+    const resolve = window.Game.res('resolve');
+    parts.push({ text: ' + ' }, { icon: resolve.icon, cls: 'ico-amber' }, { text: ` ${resolve.label} +${entry.resolveBonus}` });
   }
   parts.push({ text: ` = ${entry.total}` });
   if (entry.dc) {
@@ -47,7 +48,7 @@ function diceChipParts(entry) {
     const sign = entry.attrValue >= 0 ? '+' : '−';
     parts.push({ text: ' ' }, { icon: attrIconName(entry.attribute) }, { text: ` ${sign}${Math.abs(entry.attrValue)}` });
   }
-  if (entry.resolveBonus) parts.push({ text: ' ' }, { icon: 'sparkles', cls: 'ico-amber' }, { text: ` +${entry.resolveBonus}` });
+  if (entry.resolveBonus) parts.push({ text: ' ' }, { icon: window.Game.res('resolve').icon, cls: 'ico-amber' }, { text: ` +${entry.resolveBonus}` });
   if (entry.dc) {
     parts.push({ text: ` · DC ${entry.dc} ` },
       { icon: entry.success ? 'circle-check' : 'circle-x', cls: entry.success ? 'ico-ok' : 'ico-fail' });
@@ -92,10 +93,11 @@ function initDiceStage(containerEl) {
     void cube.offsetWidth;
     cube.classList.add('rolling');
 
-    // Тихий звук броска — файл кладёт сам ГМ в assets/sfx/, как и с combat-start.mp3;
+    // Тихий звук броска: свой звук ГМ (настройки игры) или стандартный assets/sfx/dice-roll.mp3;
     // без файла .play() просто молча зафейлится.
-    const sound = new Audio('assets/sfx/dice-roll.mp3');
-    sound.volume = 0.25;
+    const dice = window.Game.sfx('diceRoll');
+    const sound = new Audio(dice.url);
+    sound.volume = 0.25 * dice.volume;
     sound.play().catch(() => {});
 
     number.className = 'dice-number';
@@ -105,7 +107,7 @@ function initDiceStage(containerEl) {
     const maxTicks = 12;
     interval = setInterval(() => {
       ticks += 1;
-      number.textContent = String(1 + Math.floor(Math.random() * 20));
+      number.textContent = String(1 + Math.floor(Math.random() * ((window.Game.config.check || {}).die || 20)));
       if (ticks >= maxTicks) {
         clearInterval(interval);
         interval = null;

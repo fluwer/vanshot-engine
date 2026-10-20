@@ -3,6 +3,10 @@ import { ref } from 'vue';
 import StatRow from './StatRow.vue';
 import InventoryEditor from './InventoryEditor.vue';
 import Icon from './Icon.vue';
+import { useGame } from './useGame';
+
+// Короткие подписи ресурсов — из настроек игры.
+const { res } = useGame();
 
 const props = defineProps({
   character: { type: Object, required: true },
@@ -49,11 +53,11 @@ function handleCardClick(e) {
       </label>
     </div>
 
-    <StatRow label="HP" :current="character.hp.current" :max="character.hp.max" @delta="(d) => emit('hp-delta', d)" />
+    <StatRow :label="res('hp').short" :current="character.hp.current" :max="character.hp.max" @delta="(d) => emit('hp-delta', d)" />
     <div v-show="expanded">
-      <StatRow label="Эн." :current="character.energy.current" :max="character.energy.max" bar-class="energy" @delta="(d) => emit('energy-delta', d)" />
-      <StatRow label="Реш." :current="character.resolve.current" :max="character.resolve.max" bar-class="resolve" @delta="(d) => emit('resolve-delta', d)" />
-      <StatRow label="Броня" mode="value" :current="character.armor" @delta="(d) => emit('armor-delta', d)" />
+      <StatRow :label="res('energy').short" :current="character.energy.current" :max="character.energy.max" bar-class="energy" @delta="(d) => emit('energy-delta', d)" />
+      <StatRow :label="res('resolve').short" :current="character.resolve.current" :max="character.resolve.max" bar-class="resolve" @delta="(d) => emit('resolve-delta', d)" />
+      <StatRow :label="res('armor').short" mode="value" :current="character.armor" @delta="(d) => emit('armor-delta', d)" />
 
       <div class="row gm-stat-row">
         <input class="gm-item-input gm-damage-input" type="number" min="1" placeholder="Урон" v-model="damageAmount">

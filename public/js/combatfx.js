@@ -25,12 +25,18 @@ function initCombatStartFx(socket, opts) {
 
     if (typeof onStart === 'function') onStart();
 
-    new Audio('assets/sfx/combat-start.mp3').play().catch(() => {}); // файл кладёт сам ГМ — без него просто тихо
+    // Звук начала боя: свой звук ГМ (настройки игры) или стандартный; нет файла — просто тихо.
+    const startSfx = window.Game.sfx('combatStart');
+    const startSound = new Audio(startSfx.url);
+    startSound.volume = startSfx.volume;
+    startSound.play().catch(() => {});
 
     overlay.innerHTML = `<h2 class="combat-start-title">${window.Icons.svg('swords')}<span>Инициатива!</span></h2><div class="combat-start-row"></div>`;
     const row = overlay.querySelector('.combat-start-row');
     overlay.classList.add('show');
 
+    // Инициатива — кубик и атрибут из настроек игры (check): по умолчанию d20 + Тело, крит 20/1.
+    const check = window.Game.config.check || {};
     let lastDone = 0;
     order.forEach((entry, i) => {
       const cell = document.createElement('div');
@@ -43,11 +49,12 @@ function initCombatStartFx(socket, opts) {
       setTimeout(() => {
         stage.show({
           die: entry.die,
-          attribute: 'body',
+          attribute: check.initiativeAttr || 'body',
           attrValue: entry.initiative - entry.die,
           characterName: entry.name,
           total: entry.initiative,
-          critical: entry.die === 20 ? 'success' : entry.die === 1 ? 'fail' : null,
+          critical: check.critSuccess != null && entry.die >= check.critSuccess ? 'success'
+            : check.critFail != null && entry.die <= check.critFail ? 'fail' : null,
         });
       }, delay);
     });

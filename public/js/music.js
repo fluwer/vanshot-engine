@@ -93,7 +93,7 @@ function initMusicPlayer(socket, opts) {
     selectEl.innerHTML = '';
     if (!musicTracks.length) {
       const opt = document.createElement('option');
-      opt.textContent = 'Нет треков — добавьте файлы в assets/music/ и manifest.json';
+      opt.textContent = 'Треков пока нет';
       selectEl.appendChild(opt);
       return;
     }

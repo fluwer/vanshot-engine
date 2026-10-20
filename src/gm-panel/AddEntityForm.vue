@@ -1,14 +1,16 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, reactive } from 'vue';
+import { useGame } from './useGame';
 
 const props = defineProps({ kind: { type: String, required: true } }); // 'character' | 'npc'
 const emit = defineEmits(['submit', 'cancel']);
 
+// Подписи атрибутов и ресурсов — из настроек игры.
+const { attr, res, attrIds } = useGame();
+
 const name = ref('');
 const role = ref('');
-const body = ref(0);
-const mind = ref(0);
-const charisma = ref(0);
+const attrs = reactive({ body: 0, mind: 0, charisma: 0 });
 const hpMax = ref(10);
 const energyMax = ref(6);
 const resolveMax = ref(3);
@@ -18,7 +20,7 @@ function submit() {
   if (!trimmedName) return;
   const data = {
     name: trimmedName,
-    attributes: { body: Number(body.value) || 0, mind: Number(mind.value) || 0, charisma: Number(charisma.value) || 0 },
+    attributes: { body: Number(attrs.body) || 0, mind: Number(attrs.mind) || 0, charisma: Number(attrs.charisma) || 0 },
     hp: Number(hpMax.value) || 10,
     energy: Number(energyMax.value) || 6,
   };
@@ -30,9 +32,7 @@ function submit() {
   emit('submit', data);
   name.value = '';
   role.value = '';
-  body.value = 0;
-  mind.value = 0;
-  charisma.value = 0;
+  attrIds.forEach((id) => { attrs[id] = 0; });
   hpMax.value = 10;
   energyMax.value = 6;
   resolveMax.value = 3;
@@ -52,17 +52,9 @@ function submit() {
     <div class="form-field">
       <span class="form-field-label">Атрибуты</span>
       <div class="form-row">
-        <label class="form-subfield">
-          <span class="form-subfield-label">Тело</span>
-          <input type="number" v-model="body">
-        </label>
-        <label class="form-subfield">
-          <span class="form-subfield-label">Разум</span>
-          <input type="number" v-model="mind">
-        </label>
-        <label class="form-subfield">
-          <span class="form-subfield-label">Харизма</span>
-          <input type="number" v-model="charisma">
+        <label v-for="id in attrIds" :key="id" class="form-subfield">
+          <span class="form-subfield-label">{{ attr(id).label }}</span>
+          <input type="number" v-model="attrs[id]">
         </label>
       </div>
     </div>
@@ -70,15 +62,15 @@ function submit() {
       <span class="form-field-label">Ресурсы</span>
       <div class="form-row">
         <label class="form-subfield">
-          <span class="form-subfield-label">HP</span>
+          <span class="form-subfield-label">{{ res('hp').label }}</span>
           <input type="number" min="1" v-model="hpMax">
         </label>
         <label class="form-subfield">
-          <span class="form-subfield-label">Энергия</span>
+          <span class="form-subfield-label">{{ res('energy').label }}</span>
           <input type="number" min="1" v-model="energyMax">
         </label>
         <label v-if="kind === 'character'" class="form-subfield">
-          <span class="form-subfield-label">Решимость</span>
+          <span class="form-subfield-label">{{ res('resolve').label }}</span>
           <input type="number" min="1" v-model="resolveMax">
         </label>
       </div>

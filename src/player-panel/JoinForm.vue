@@ -1,11 +1,16 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
 import Icon from '../gm-panel/Icon.vue';
+import { useGame } from '../gm-panel/useGame';
 
 const props = defineProps({
   store: { type: Object, required: true },
   bridge: { type: Object, required: true },
 });
+
+// Заголовок формы входа — из настроек игры (подзаголовок, иначе название).
+const { config: gameConfig } = useGame();
+const loginTitle = computed(() => `${gameConfig.value.subtitle || gameConfig.value.title || ''} — вход`);
 
 const name = ref('');
 const characterId = ref('');
@@ -82,7 +87,7 @@ function join() {
 </script>
 
 <template>
-  <h1>Сквозь снег — вход</h1>
+  <h1>{{ loginTitle }}</h1>
   <label class="form-field">
     <span class="form-field-label">Имя</span>
     <input v-model="name" placeholder="Отображаемое имя">

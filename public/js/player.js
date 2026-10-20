@@ -4,17 +4,6 @@ const socket = io();
 // см. src/player-panel/main.js.
 window.playerSocket = socket;
 
-// Название игры/подзаголовок — из gameConfig.json, чтобы движок не был
-// зашит под конкретную игру (см. TODO).
-fetch('/gameConfig.json')
-  .then((r) => (r.ok ? r.json() : {}))
-  .catch(() => ({}))
-  .then((cfg) => {
-    if (cfg.title) document.title = `${cfg.title} — Игрок`;
-    const h1 = document.querySelector('#join-form h1');
-    if (cfg.subtitle && h1) h1.textContent = `${cfg.subtitle} — вход`;
-  });
-
 // Пока играет анимация «Начать бой», прячем обновление индикатора боя —
 // иначе итоговый порядок хода виден раньше, чем долетели кубики. Гейтинг
 // (fxHolding/pendingCombatState) живёт в src/player-panel/main.js, рядом
@@ -290,6 +279,7 @@ socket.on('fog:update', ({ blob }) => {
 });
 
 socket.on('state', (state) => {
+  window.Game.update(state.game); // настройки игры (название, тема, подписи) — раньше всех, остальное их читает
   lastState = state;
   window.charactersStoreApp?.updateState(state.characters, state.skillsCatalog);
   window.diceLogPanelApp?.updateState(state.diceLog);

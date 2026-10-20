@@ -44,7 +44,7 @@ function initSoundboard(socket, containerId, opts = {}) {
   function render() {
     container.innerHTML = '';
     if (!sounds.length) {
-      container.innerHTML = '<span class="muted small">Нет звуков — добавьте файлы в assets/sounds/ и manifest.json</span>';
+      container.innerHTML = '<span class="muted small">Звуков пока нет</span>';
       return;
     }
     sounds.forEach((s) => {

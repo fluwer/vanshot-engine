@@ -12,6 +12,7 @@ import LocationBadge from './LocationBadge.vue';
 import ImageProposals from './ImageProposals.vue';
 import CombatStrip from './CombatStrip.vue';
 import RulerPanel from './RulerPanel.vue';
+import GameSettingsPanel from './GameSettingsPanel.vue';
 
 // gm.js (обычный не-модульный скрипт) грузится раньше этого бандла и
 // успевает выставить window.gmSocket/window.gmBridge синхронно при загрузке
@@ -158,3 +159,7 @@ createApp(EffectsPanel, { bridge, gm: true }).mount('#effects-panel-vue-root');
 
 // ---- Линейка (пункт левой панели; режим ведёт сама панель по dock:change) ----
 createApp(RulerPanel, { bridge }).mount('#ruler-panel-vue-root');
+
+// ---- Настройки игры (пункт «Игра»): название и тема, звуки и ассеты, подписи и навыки, проверки ----
+// Каталог навыков берёт из общего store (его наполняет CharactersPanel.updateState).
+createApp(GameSettingsPanel, { bridge, store }).mount('#game-panel-vue-root');

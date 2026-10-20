@@ -83,11 +83,30 @@ module.exports = {
   // ---- Спецэффекты на карте ----
   VFX_TYPES: ['smoke', 'fire', 'firework', 'explosion', 'lightning', 'magic'], // доступные типы, transient — не хранятся в state/runtime.json
 
-  // ---- Кубик урона (бросают ГМ и игроки; HP сам не меняет — урон применяет ГМ на карточке цели) ----
-  DAMAGE_DICE: [4, 6, 8, 10, 12], // допустимое число граней
+  // ---- Настройки игры (data/game.json, экран «Игра» у ГМ; модель — server/gameConfig.js) ----
+  // Что ГМ может менять: название, тему, звуки интерфейса, подписи и иконки атрибутов/ресурсов/фракций,
+  // параметры проверок. Идентификаторы и число атрибутов/ресурсов/фракций — свойство движка, не игры.
+  // Кубик урона (бросают ГМ и игроки) HP сам не меняет — урон применяет ГМ на карточке цели.
+  GAME_TITLE_MAX_LENGTH: 60,
+  GAME_SUBTITLE_MAX_LENGTH: 80,
+  GAME_LABEL_MAX_LENGTH: 24, // подпись атрибута/ресурса/фракции
+  GAME_SHORT_LABEL_MAX_LENGTH: 8, // короткая подпись ресурса (тесные карточки)
+  GAME_HIDDEN_NAME_MAX_LENGTH: 30, // что видят игроки вместо имени скрытого NPC
+  GAME_DIE_SIDES: [4, 6, 8, 10, 12, 20], // допустимые кубики (у каждого есть форма в diceFx.js)
+  GAME_BONUS_COST_MAX: 3, // сколько ресурса «решимости» тратится на бонус к броску
+  GAME_BONUS_AMOUNT_MAX: 5, // на сколько бонус увеличивает результат
+  GAME_DC_PRESETS_MAX: 6,
+  GAME_DC_PRESET_LABEL_MAX_LENGTH: 16,
+  GAME_DC_MAX: 40,
+  GAME_ICON_NAME_RE: /^[a-z0-9][a-z0-9-]{0,39}$/, // id иконки из реестра public/js/icons-data.js
+  SFX_UPLOAD_MAX_SIZE: 1024 * 1024, // звук интерфейса (кубик, начало боя, заставка локации)
+  AVATAR_PRESETS_MAX: 60, // своих готовых картинок героев (data/presets), загруженных ГМ из интерфейса
+  AVATAR_PRESET_LABEL_MAX_LENGTH: 40,
 
-  // ---- Скрытое имя NPC: что видят игроки вместо имени и роли ----
-  NPC_HIDDEN_NAME: 'Неизвестный',
+  // ---- Каталог навыков (data/skills.json) ----
+  SKILLS_MAX: 60,
+  SKILL_NAME_MAX_LENGTH: 40,
+  SKILL_DESCRIPTION_MAX_LENGTH: 400,
 
   // ---- Погода на экране (одна на всю игру, задаёт ГМ; рисует клиент — public/js/weather.js) ----
   WEATHER_MODES: ['off', 'cold', 'wind', 'blizzard'], // нет / холод / ветер / метель

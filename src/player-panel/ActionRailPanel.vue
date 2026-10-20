@@ -2,20 +2,27 @@
 import { ref, computed } from 'vue';
 import Icon from '../gm-panel/Icon.vue';
 import DamageDice from '../gm-panel/DamageDice.vue';
+import { useGame } from '../gm-panel/useGame';
 
 const props = defineProps({
   store: { type: Object, required: true },
   bridge: { type: Object, required: true },
 });
 
-const ATTRIBUTE_LABELS = { body: 'Тело', mind: 'Разум', charisma: 'Харизма' };
+// Подписи атрибутов и ресурса бонуса, цена и размер бонуса — из настроек игры.
+const { attr, res, check } = useGame();
+const bonusHint = computed(() => {
+  const { cost } = check.value.bonus || {};
+  return cost > 0 ? `−${cost} ${res('resolve').label}` : res('resolve').label;
+});
+const bonusAmount = computed(() => (check.value.bonus || {}).amount);
 
 const character = computed(() => props.store.characters.find((c) => c.id === props.store.myCharacterId));
 const spendResolve = ref(false);
 
 function label(key, value) {
   const sign = value >= 0 ? '+' : '';
-  return `${ATTRIBUTE_LABELS[key] || key} (${sign}${value})`;
+  return `${attr(key).label} (${sign}${value})`;
 }
 
 function roll(key) {
@@ -33,6 +40,6 @@ function roll(key) {
   <div class="attr-buttons">
     <button v-for="(value, key) in character?.attributes" :key="key" @click="roll(key)">{{ label(key, value) }}</button>
   </div>
-  <label class="resolve-toggle"><input type="checkbox" v-model="spendResolve"> −1 Решимость <Icon name="arrow-right" /> +2</label>
+  <label class="resolve-toggle"><input type="checkbox" v-model="spendResolve"> {{ bonusHint }} <Icon name="arrow-right" /> +{{ bonusAmount }}</label>
   <DamageDice :bridge="bridge" :character-id="character ? character.id : null" />
 </template>

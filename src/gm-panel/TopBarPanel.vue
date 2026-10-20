@@ -1,6 +1,7 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import Icon from './Icon.vue';
+import { useGame } from './useGame';
 
 const props = defineProps({
   store: { type: Object, required: true },
@@ -9,11 +10,11 @@ const props = defineProps({
 
 // Правая половина нижней панели ГМ: DC проверки, бросок мастера, восстановление
 // отряда. Левая половина — бросок за выбранного (GmAttributesPanel.vue).
-const DC_PRESETS = [
-  { title: 'Лёгкий', value: 10 },
-  { title: 'Средний', value: 14 },
-  { title: 'Сложный', value: 18 },
-];
+// Пресеты DC, кубик проверок и подписи ресурсов — из настроек игры (check, resources).
+const { check, res } = useGame();
+const DC_PRESETS = computed(() => (check.value.dcPresets || []).map((p) => ({ title: p.label, value: p.value })));
+const dieName = computed(() => `d${check.value.die || 20}`);
+const restoreTitle = computed(() => `Восстановить ${res('energy').label.toLowerCase()} и ${res('resolve').label.toLowerCase()} всем`);
 
 const customDc = ref('');
 
@@ -54,6 +55,6 @@ function restoreParty() {
   </div>
   <input type="number" placeholder="своё" title="Своё значение DC" style="width:60px" v-model="customDc" @change="onCustomChange">
   <button class="small" title="Сбросить DC" aria-label="Сбросить DC" @click="clearDc"><Icon name="x" /></button>
-  <button @click="freeRoll" title="Бросок мастера (d20)" aria-label="Бросок мастера (d20)"><Icon name="d20" /></button>
-  <button @click="restoreParty" title="Восстановить энергию и решимость всем" aria-label="Восстановить энергию и решимость всем"><Icon name="refresh-cw" /></button>
+  <button @click="freeRoll" :title="`Бросок мастера (${dieName})`" :aria-label="`Бросок мастера (${dieName})`"><Icon name="d20" /></button>
+  <button @click="restoreParty" :title="restoreTitle" :aria-label="restoreTitle"><Icon name="refresh-cw" /></button>
 </template>

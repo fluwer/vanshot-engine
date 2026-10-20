@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import StatRow from './StatRow.vue';
 import InventoryEditor from './InventoryEditor.vue';
 import Icon from './Icon.vue';
+import { useGame } from './useGame';
 
 const props = defineProps({
   npc: { type: Object, required: true },
@@ -22,8 +23,9 @@ const emit = defineEmits([
   'location-set',
 ]);
 
-// Фракции — единый справочник public/js/icons.js (подпись, значок, цвет).
-const NPC_FACTIONS = window.FACTION_LIST;
+// Фракции (подпись, значок, цвет), подписи ресурсов и имя скрытого NPC — из настроек игры.
+const { config: gameConfig, res, faction, factionIds } = useGame();
+const NPC_FACTIONS = computed(() => factionIds.map(faction));
 
 const avatarColor = computed(() => {
   const style = props.factionStyle && (props.factionStyle[props.npc.faction] || props.factionStyle.neutral);
@@ -51,7 +53,7 @@ function handleCardClick(e) {
     <div class="row" style="gap:6px">
       <img v-if="npc.avatar" class="gm-avatar" :src="npc.avatar" alt="">
       <span v-else class="gm-avatar gm-avatar-fallback" :style="{ background: avatarColor }">{{ npc.name[0] }}</span>
-      <h3 style="margin:0">{{ npc.name }} ({{ npc.role }})<Icon v-if="npc.nameHidden" name="eye-off" class="npc-name-hidden-ico" data-tip="Имя скрыто: игроки видят «Неизвестный»" /></h3>
+      <h3 style="margin:0">{{ npc.name }} ({{ npc.role }})<Icon v-if="npc.nameHidden" name="eye-off" class="npc-name-hidden-ico" :data-tip="`Имя скрыто: игроки видят «${gameConfig.hiddenName}»`" /></h3>
       <button class="small npc-info-toggle" title="Инфо-карточка" aria-label="Инфо-карточка" @click="emit('info')"><Icon name="info" /></button>
       <button class="small" title="Свернуть/развернуть" aria-label="Свернуть/развернуть" @click="emit('toggle-expand')"><Icon :name="expanded ? 'chevron-down' : 'chevron-right'" /></button>
     </div>
@@ -63,7 +65,7 @@ function handleCardClick(e) {
       <label class="npc-flag-toggle">
         <input type="checkbox" :checked="npc.dead" @change="emit('dead-toggle', $event.target.checked)"> <Icon name="skull" /> Убит
       </label>
-      <label class="npc-flag-toggle" data-tip="Игроки видят «Неизвестный» вместо имени и роли (на карте, в порядке хода и журнале бросков)">
+      <label class="npc-flag-toggle" :data-tip="`Игроки видят «${gameConfig.hiddenName}» вместо имени и роли (на карте, в порядке хода и журнале бросков)`">
         <input type="checkbox" :checked="npc.nameHidden" @change="emit('name-hidden-toggle', $event.target.checked)"> <Icon name="eye-off" /> Скрыть имя
       </label>
     </div>
@@ -88,10 +90,10 @@ function handleCardClick(e) {
       </label>
     </div>
 
-    <StatRow label="HP" :current="npc.hp.current" :max="npc.hp.max" bar-class="npc" @delta="(d) => emit('hp-delta', d)" />
+    <StatRow :label="res('hp').short" :current="npc.hp.current" :max="npc.hp.max" bar-class="npc" @delta="(d) => emit('hp-delta', d)" />
     <div v-show="expanded">
-      <StatRow label="Эн." :current="npc.energy.current" :max="npc.energy.max" bar-class="energy" @delta="(d) => emit('energy-delta', d)" />
-      <StatRow label="Броня" mode="value" :current="npc.armor" @delta="(d) => emit('armor-delta', d)" />
+      <StatRow :label="res('energy').short" :current="npc.energy.current" :max="npc.energy.max" bar-class="energy" @delta="(d) => emit('energy-delta', d)" />
+      <StatRow :label="res('armor').short" mode="value" :current="npc.armor" @delta="(d) => emit('armor-delta', d)" />
 
       <div class="row gm-stat-row">
         <input class="gm-item-input gm-damage-input" type="number" min="1" placeholder="Урон" v-model="damageAmount">

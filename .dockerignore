@@ -1,7 +1,6 @@
 node_modules
 public/dist
 .git
-server/data/uploads
-server/data/presets
-server/data/roster.json*
-server/data/audio-library.json*
+# Игровые данные (коды доступа, партия, загрузки) в образ не попадают: в Docker это том ./data на хосте.
+# Пример игры для чистого тома лежит в server/defaults/.
+server/data

@@ -29,17 +29,30 @@
   // файлов не нужно, работает офлайн. Браузер может не разрешить звук до
   // первого клика (перезагрузка страницы без взаимодействия) — тогда звук
   // тихо пропускается, оверлей работает как обычно.
-  const SOUND_URL = 'assets/sfx/scene-enter.mp3';
+  // Свой звук ГМ (настройки игры → sfx.sceneEnter) главнее стандартного; при смене настроек файл
+  // подгружается заново (url и громкость берём у Game.sfx).
   let soundFile = null;
-  fetch(SOUND_URL, { method: 'HEAD' })
-    .then((r) => {
-      if (r.ok) {
-        soundFile = new Audio(SOUND_URL);
-        soundFile.preload = 'auto';
-        soundFile.volume = 0.5;
-      }
-    })
-    .catch(() => {});
+  let soundUrl = null;
+  function loadSoundFile() {
+    const sfx = window.Game.sfx('sceneEnter');
+    if (sfx.url === soundUrl) {
+      if (soundFile) soundFile.volume = 0.5 * sfx.volume;
+      return;
+    }
+    soundUrl = sfx.url;
+    soundFile = null;
+    fetch(sfx.url, { method: 'HEAD' })
+      .then((r) => {
+        if (r.ok && soundUrl === sfx.url) {
+          soundFile = new Audio(sfx.url);
+          soundFile.preload = 'auto';
+          soundFile.volume = 0.5 * sfx.volume;
+        }
+      })
+      .catch(() => {});
+  }
+  loadSoundFile();
+  window.Game.onChange(loadSoundFile);
 
   let audioCtx = null;
 

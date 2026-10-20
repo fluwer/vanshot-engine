@@ -1,6 +1,7 @@
 <script setup>
-import { reactive } from 'vue';
+import { reactive, computed } from 'vue';
 import Icon from './Icon.vue';
+import { useGame } from './useGame';
 
 const props = defineProps({
   store: { type: Object, required: true },
@@ -12,8 +13,9 @@ const props = defineProps({
   selection: { type: Object, required: true },
 });
 
-// Фракции NPC — единый справочник public/js/icons.js (window.FACTIONS): подпись, значок, цвет.
-const FACTIONS = window.FACTIONS;
+// Фракции NPC (подпись, значок, цвет), кубик и атрибут инициативы — из настроек игры.
+const { faction, attr, check } = useGame();
+const initiativeHint = computed(() => `${check.value.die ? `d${check.value.die}` : 'd20'} + ${attr(check.value.initiativeAttr || 'body').label}`);
 
 // picked — состояние чеклиста участников. Ключ 'type:id' -> checked.
 // Живёт в компоненте (не в store), поэтому переживает обновления store
@@ -52,7 +54,7 @@ function onStart() {
 function factionFor(entry) {
   if (entry.type !== 'npc') return null;
   const npc = props.store.npcs.find((n) => n.id === entry.id);
-  return npc ? FACTIONS[npc.faction || 'neutral'] || FACTIONS.neutral : null;
+  return npc ? faction(['enemy', 'ally', 'neutral'].includes(npc.faction) ? npc.faction : 'neutral') : null;
 }
 
 function turnRowClass(entry, index) {
@@ -90,7 +92,7 @@ function onRowClick(entry) {
           <input type="checkbox" :checked="picked[`npc:${n.id}`]" @change="togglePicked('npc', n.id)"> {{ n.name }}<Icon v-if="n.dead" name="skull" class="ico-dead" title="Убит" /><Icon v-if="!n.dead && !n.visible" name="eye-off" class="ico-dead" title="Скрыт от игроков" />
         </label>
       </div>
-      <button class="small wide primary" title="Бросить инициативу (d20 + Тело) и начать бой отмеченными участниками" @click="onStart"><Icon name="d20" /> Начать бой</button>
+      <button class="small wide primary" :title="`Бросить инициативу (${initiativeHint}) и начать бой отмеченными участниками`" @click="onStart"><Icon name="d20" /> Начать бой</button>
     </div>
     <div v-else>
       <div class="row" style="justify-content:space-between">

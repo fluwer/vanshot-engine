@@ -1,8 +1,9 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, reactive, watch } from 'vue';
 import Modal from './Modal.vue';
 import AvatarEditor from './AvatarEditor.vue';
 import { vAutosize } from './autosize.js';
+import { useGame } from './useGame';
 
 const props = defineProps({
   npc: { type: Object, required: true },
@@ -15,9 +16,8 @@ const name = ref('');
 const role = ref('');
 const notes = ref('');
 const secret = ref('');
-const body = ref(0);
-const mind = ref(0);
-const charisma = ref(0);
+const attrs = reactive({ body: 0, mind: 0, charisma: 0 });
+const { attr, attrIds } = useGame(); // подписи атрибутов — из настроек игры
 
 // Поля — из NPC при открытии диалога (не при каждой рассылке state: она подменяет объект NPC, и
 // смена картинки или чужой бросок стирали бы набранный, но не сохранённый текст).
@@ -29,9 +29,7 @@ watch(
     role.value = n.role || '';
     notes.value = n.notes || '';
     secret.value = n.secret || '';
-    body.value = n.attributes?.body ?? 0;
-    mind.value = n.attributes?.mind ?? 0;
-    charisma.value = n.attributes?.charisma ?? 0;
+    attrIds.forEach((id) => { attrs[id] = n.attributes?.[id] ?? 0; });
   },
   { immediate: true },
 );
@@ -42,7 +40,7 @@ function save() {
     role: role.value.trim(),
     notes: notes.value.trim(),
     secret: secret.value.trim(),
-    attributes: { body: Number(body.value) || 0, mind: Number(mind.value) || 0, charisma: Number(charisma.value) || 0 },
+    attributes: { body: Number(attrs.body) || 0, mind: Number(attrs.mind) || 0, charisma: Number(attrs.charisma) || 0 },
   });
   emit('close');
 }
@@ -83,17 +81,9 @@ function remove() {
     <div class="form-field">
       <span class="form-field-label">Атрибуты</span>
       <div class="form-row">
-        <label class="form-subfield">
-          <span class="form-subfield-label">Тело</span>
-          <input type="number" v-model="body">
-        </label>
-        <label class="form-subfield">
-          <span class="form-subfield-label">Разум</span>
-          <input type="number" v-model="mind">
-        </label>
-        <label class="form-subfield">
-          <span class="form-subfield-label">Харизма</span>
-          <input type="number" v-model="charisma">
+        <label v-for="id in attrIds" :key="id" class="form-subfield">
+          <span class="form-subfield-label">{{ attr(id).label }}</span>
+          <input type="number" v-model="attrs[id]">
         </label>
       </div>
     </div>

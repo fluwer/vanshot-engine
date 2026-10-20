@@ -2,6 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const map = require('./map');
 const config = require('./config');
+const gameConfig = require('./gameConfig');
+const { writeFileAtomic } = require('./fsutil');
 
 const DATA_DIR = path.join(__dirname, 'data');
 const AVATARS_FILE = path.join(DATA_DIR, 'avatars.json');
@@ -28,6 +30,8 @@ const AUDIO_UPLOAD_DIRS = {
   music: path.join(UPLOADS_ROOT, 'music'),                         // /assets/music/…
   sounds: path.join(UPLOADS_ROOT, 'sounds'),                       // /assets/sounds/…
 };
+const SFX_DIR = path.join(UPLOADS_ROOT, 'sfx');                    // /assets/sfx/… — свои звуки интерфейса (game.json → sfx)
+const SKILLS_FILE = path.join(DATA_DIR, 'skills.json');            // каталог навыков (правит ГМ: экран «Игра»)
 
 // Раньше загруженные аватары и картинки карты писались прямо в public/avatars/{uploads,map-images}.
 // Если там что-то осталось (локальная разработка, контейнер, в который файлы вернули через docker cp),
@@ -68,6 +72,21 @@ function moveFile(from, to) {
   });
 }());
 
+// «Пример игры» (герои, NPC, навыки, локации, аватары) лежит в server/defaults/ — он запечён в образ.
+// Рабочие копии живут в data/ (том Docker) и правятся из интерфейса ГМ. Нет файла в data/ (чистый том,
+// первый запуск, файл удалён) — берём его из примера, а не падаем при старте.
+const DEFAULTS_DIR = path.join(__dirname, 'defaults');
+(function ensureDataFiles() {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  ['characters.json', 'npcs.json', 'skills.json', 'avatars.json', 'locations.json'].forEach((name) => {
+    const target = path.join(DATA_DIR, name);
+    const source = path.join(DEFAULTS_DIR, name);
+    if (fs.existsSync(target) || !fs.existsSync(source)) return;
+    fs.copyFileSync(source, target);
+    console.log(`data/${name} создан из примера (server/defaults/${name})`);
+  });
+}());
+
 const characters = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'characters.json'), 'utf-8'));
 const npcs = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'npcs.json'), 'utf-8'));
 const skillsCatalog = JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'skills.json'), 'utf-8'));
@@ -83,7 +102,8 @@ const avatarAssignments = JSON.parse(fs.readFileSync(AVATARS_FILE, 'utf-8'));
 const ROSTER_FILE = path.join(DATA_DIR, 'roster.json');
 const ROSTER_FIELDS = ['name', 'title', 'hook', 'backstory', 'notes', 'skills', 'attributes', 'inventory'];
 const cloneJson = (v) => JSON.parse(JSON.stringify(v));
-const filterSkills = (list) => (Array.isArray(list) ? list.filter((s) => typeof s === 'string' && skillsCatalog[s]) : []);
+const hasSkill = (name) => Object.prototype.hasOwnProperty.call(skillsCatalog, name);
+const filterSkills = (list) => (Array.isArray(list) ? list.filter((s) => typeof s === 'string' && hasSkill(s)) : []);
 
 // Шаблон — каким герои пришли из characters.json (навыки уже по каталогу): с ним сравниваем при сохранении.
 const baseCharacters = cloneJson(characters).map((c) => ({ ...c, skills: filterSkills(c.skills), notes: typeof c.notes === 'string' ? c.notes : '' }));
@@ -146,19 +166,6 @@ function characterFromDefinition(def) {
   });
   characters.forEach((c) => { c.skills = filterSkills(c.skills); }); // навыки, убранные из каталога, отпадают
 }());
-
-// Атомарная запись ценных данных: во временный файл, прежняя исправная версия — в .bak, затем переименование.
-function writeFileAtomic(file, data) {
-  const tmp = `${file}.tmp`;
-  fs.writeFileSync(tmp, data);
-  if (fs.existsSync(file)) {
-    try {
-      JSON.parse(fs.readFileSync(file, 'utf-8'));
-      fs.copyFileSync(file, `${file}.bak`);
-    } catch (err) { /* текущий файл битый — .bak не затираем */ }
-  }
-  fs.renameSync(tmp, file);
-}
 
 // Определение героя для roster.json (текущие HP/энергия/решимость — в runtime.json, тут только максимумы).
 function characterDefinition(c) {
@@ -237,17 +244,16 @@ characters.forEach((c) => {
 });
 if (codesChanged) saveCharacterCodes();
 
-// Локации — ГМ создаёт их прямо по ходу игры (не конфиг-файлом). При первом
-// запуске (нет locations.json) создаём одну дефолтную локацию — то же место,
-// где раньше был единственный глобальный поезд, но теперь пустая сетка.
+// Локации — ГМ создаёт их прямо по ходу игры (не конфиг-файлом). Нет locations.json (в норме его
+// создаёт ensureDataFiles из примера) или он пуст/битый — заводим одну пустую локацию.
 let locations;
 try {
   locations = JSON.parse(fs.readFileSync(LOCATIONS_FILE, 'utf-8'));
   if (!Array.isArray(locations) || !locations.length) throw new Error('empty locations.json');
 } catch (err) {
   locations = [{
-    id: 'train',
-    name: 'Поезд',
+    id: 'start',
+    name: 'Старт',
     gridWidth: config.DEFAULT_LOCATION_WIDTH,
     gridHeight: config.DEFAULT_LOCATION_HEIGHT,
   }];
@@ -521,7 +527,7 @@ function setNpcVisible(npcId, visible) {
   }
 }
 
-// Скрытое имя: игроки видят вместо имени и роли config.NPC_HIDDEN_NAME (маска — в
+// Скрытое имя: игроки видят вместо имени и роли hiddenName из настроек игры (маска — в
 // getPublicState/publicCombat/publicDiceLog; настоящее имя остаётся в данных и у ГМ).
 function setNpcNameHidden(npcId, hidden) {
   const n = findNpc(npcId);
@@ -703,8 +709,11 @@ function isAvatarPresetUrl(url) {
 // Список для выбора: [{ id, url, label }]. Сначала в порядке манифестов (свой — раньше поставляемого),
 // затем остальные по алфавиту; подпись — из манифеста или имя файла без расширения.
 function listAvatarPresets() {
+  // «Показывать примеры из образа» выключено — в выборе только свои картинки (data/presets); уже
+  // назначенные картинки из образа продолжают работать (isAvatarPresetUrl их по-прежнему знает).
+  const dirs = gameConfig.get().showBundled === false ? [USER_PRESETS_DIR] : PRESET_DIRS;
   const fileSet = new Set();
-  PRESET_DIRS.forEach((dir) => {
+  dirs.forEach((dir) => {
     try {
       fs.readdirSync(dir, { withFileTypes: true })
         .filter((d) => d.isFile() && PRESET_NAME_RE.test(d.name))
@@ -713,7 +722,7 @@ function listAvatarPresets() {
   });
   const files = [...fileSet];
   const manifest = [];
-  PRESET_DIRS.forEach((dir) => {
+  dirs.forEach((dir) => {
     try {
       const raw = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf-8'));
       if (Array.isArray(raw)) raw.filter((e) => e && typeof e.url === 'string').forEach((e) => manifest.push(e));
@@ -725,7 +734,8 @@ function listAvatarPresets() {
     const url = `/avatars/presets/${name}`;
     const base = name.replace(/\.[^.]+$/, '');
     const e = byUrl.get(url);
-    return { id: (e && e.id) || base, url, label: (e && e.label) || base.replace(/[-_]+/g, ' ') };
+    // own — файл лежит в data/presets (его загрузил ГМ): такую картинку можно удалить из интерфейса
+    return { id: (e && e.id) || base, url, label: (e && e.label) || base.replace(/[-_]+/g, ' '), own: fs.existsSync(path.join(USER_PRESETS_DIR, name)) };
   };
   const present = new Set(files);
   const ordered = [...new Set(manifest
@@ -733,6 +743,193 @@ function listAvatarPresets() {
     .filter((name) => present.has(name)))];
   const rest = files.filter((name) => !ordered.includes(name)).sort((a, b) => a.localeCompare(b));
   return [...ordered, ...rest].map(toItem);
+}
+
+// ---- Свои готовые картинки (экран «Игра» → «Звуки»): загрузка и удаление ГМ -----------------------------
+// Файл кладётся в data/presets (переживает пересборку Docker), подпись — в data/presets/manifest.json
+// (тот же формат, что у поставляемого: [{ id, url, label }]; listAvatarPresets склеивает оба). Принимаем
+// только растровые форматы: SVG с исполняемым содержимым открывался бы по прямой ссылке — файлы-SVG
+// по-прежнему можно положить в папку руками. Картинка уже приведена клиентом к 128×128 PNG.
+const PRESET_RASTER_RE = /^data:image\/(png|jpeg|jpg|webp|gif);base64,([A-Za-z0-9+/=]+)$/;
+const CONTROL_CHARS_RE = /[\u0000-\u001f\u007f]/;
+
+function readUserPresetManifest() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(USER_PRESETS_DIR, 'manifest.json'), 'utf-8'));
+    return Array.isArray(raw) ? raw.filter((e) => e && typeof e.url === 'string') : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function writeUserPresetManifest(list) {
+  writeFileAtomic(path.join(USER_PRESETS_DIR, 'manifest.json'), JSON.stringify(list, null, 2));
+}
+
+function saveUserPreset(name, dataUrl) {
+  if (typeof dataUrl !== 'string') return { ok: false, reason: 'bad-format' };
+  const match = PRESET_RASTER_RE.exec(dataUrl);
+  if (!match) return { ok: false, reason: 'bad-format' };
+  const buffer = Buffer.from(match[2], 'base64');
+  if (!buffer.length || buffer.length > config.AVATAR_UPLOAD_MAX_SIZE) return { ok: false, reason: 'too-large' };
+  const ext = match[1] === 'jpeg' ? 'jpg' : match[1];
+  const label = (typeof name === 'string' ? name.replace(CONTROL_CHARS_RE, ' ').trim() : '').slice(0, config.AVATAR_PRESET_LABEL_MAX_LENGTH) || 'Картинка';
+  if (listAvatarPresets().filter((p) => p.own).length >= config.AVATAR_PRESETS_MAX) return { ok: false, reason: 'limit' };
+  const base = label.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase().slice(0, 24) || 'avatar';
+  const stamp = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 4)}`;
+  const fileName = `${base}-${stamp}.${ext}`;
+  try {
+    fs.mkdirSync(USER_PRESETS_DIR, { recursive: true });
+    fs.writeFileSync(path.join(USER_PRESETS_DIR, fileName), buffer);
+    const url = `/avatars/presets/${fileName}`;
+    writeUserPresetManifest([...readUserPresetManifest(), { id: `${base}-${stamp}`, url, label }]);
+    return { ok: true, url };
+  } catch (err) {
+    console.warn('Не удалось сохранить картинку героя:', err.message);
+    return { ok: false, reason: 'save-failed' };
+  }
+}
+
+// Удаляет только СВОЮ картинку (из data/presets); поставляемые из образа удалить нельзя — их скрывает
+// переключатель «Показывать примеры». Герои и NPC, которым она была назначена, возвращаются к букве-заглушке
+// (если одноимённого файла в образе нет — иначе картинка осталась бы доступной по тому же адресу).
+function removeUserPreset(url) {
+  const m = typeof url === 'string' ? /^\/avatars\/presets\/([^/]+)$/.exec(url) : null;
+  if (!m || !PRESET_NAME_RE.test(m[1])) return { ok: false, reason: 'not-found' };
+  const file = path.join(USER_PRESETS_DIR, m[1]);
+  if (!fs.existsSync(file)) return { ok: false, reason: 'not-found' };
+  try {
+    fs.unlinkSync(file);
+    writeUserPresetManifest(readUserPresetManifest().filter((e) => e.url !== url));
+  } catch (err) {
+    console.warn('Не удалось удалить картинку героя:', err.message);
+    return { ok: false, reason: 'save-failed' };
+  }
+  if (!fs.existsSync(path.join(BUNDLED_PRESETS_DIR, m[1]))) {
+    characters.forEach((c) => { if (c.avatar === url) setCharacterAvatar(c.id, null); });
+    npcs.forEach((n) => { if (n.avatar === url) setNpcAvatar(n.id, null); });
+  }
+  return { ok: true };
+}
+
+// ---- Звуки интерфейса (кубик, начало боя, заставка локации) --------------------------------------------
+// Файл — в data/uploads/sfx, адрес /assets/sfx/<имя> записывается в настройки игры (sfx.<вид>); старый
+// свой файл при замене и сбросе удаляется. Стандартные звуки лежат в образе (public/assets/sfx) и сюда не попадают.
+function removeSfxFile(url) {
+  if (typeof url !== 'string' || !url.startsWith('/assets/sfx/')) return;
+  fs.unlink(path.join(SFX_DIR, path.basename(url)), (err) => {
+    if (err && err.code !== 'ENOENT') console.warn('Не удалось удалить звук интерфейса:', err.message);
+  });
+}
+
+function saveSfx(kind, dataUrl) {
+  if (!gameConfig.SFX_KINDS.includes(kind)) return { ok: false, reason: 'invalid:sfx' };
+  const match = typeof dataUrl === 'string' ? /^data:audio\/([a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl) : null;
+  const ext = match && AUDIO_EXT_BY_MIME[match[1]];
+  if (!ext) return { ok: false, reason: 'bad-format' };
+  const buffer = Buffer.from(match[2], 'base64');
+  if (!buffer.length || buffer.length > config.SFX_UPLOAD_MAX_SIZE) return { ok: false, reason: 'too-large' };
+  const fileName = `${kind}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 4)}.${ext}`;
+  const prev = gameConfig.get().sfx[kind];
+  try {
+    fs.mkdirSync(SFX_DIR, { recursive: true });
+    fs.writeFileSync(path.join(SFX_DIR, fileName), buffer);
+  } catch (err) {
+    console.warn('Не удалось сохранить звук интерфейса:', err.message);
+    return { ok: false, reason: 'save-failed' };
+  }
+  const url = `/assets/sfx/${fileName}`;
+  const result = gameConfig.update({ sfx: { [kind]: { url, volume: prev ? prev.volume : 1 } } });
+  if (!result.ok) {
+    fs.unlink(path.join(SFX_DIR, fileName), () => {});
+    return result;
+  }
+  if (prev) removeSfxFile(prev.url);
+  return { ok: true, url };
+}
+
+function resetSfx(kind) {
+  if (!gameConfig.SFX_KINDS.includes(kind)) return { ok: false, reason: 'invalid:sfx' };
+  const prev = gameConfig.get().sfx[kind];
+  const result = gameConfig.update({ sfx: { [kind]: null } });
+  if (result.ok && prev) removeSfxFile(prev.url);
+  return result.ok ? { ok: true } : result;
+}
+
+// ---- Каталог навыков (экран «Игра» → «Подписи») --------------------------------------------------------
+// skills.json: { "Название": { icon, description } }; героям навык выдаётся по названию, поэтому
+// переименование и удаление проводятся по всем героям (и в roster.json). Порядок ключей = порядок в списках.
+const RESERVED_SKILL_NAMES = ['__proto__', 'constructor', 'prototype'];
+
+function saveSkillsFile() {
+  try {
+    writeFileAtomic(SKILLS_FILE, JSON.stringify(skillsCatalog, null, 2));
+    return true;
+  } catch (err) {
+    console.warn('Не удалось сохранить skills.json:', err.message);
+    return false;
+  }
+}
+
+function saveSkill(payload) {
+  const p = payload && typeof payload === 'object' ? payload : {};
+  const name = typeof p.name === 'string' ? p.name.trim() : '';
+  if (!name || name.length > config.SKILL_NAME_MAX_LENGTH || CONTROL_CHARS_RE.test(name) || RESERVED_SKILL_NAMES.includes(name)) {
+    return { ok: false, reason: 'invalid:name' };
+  }
+  if (!gameConfig.isKnownIcon(p.icon)) return { ok: false, reason: 'invalid:icon' };
+  const description = typeof p.description === 'string' ? p.description.trim() : '';
+  if (description.length > config.SKILL_DESCRIPTION_MAX_LENGTH || CONTROL_CHARS_RE.test(description.replace(/[\r\n\t]/g, ' '))) {
+    return { ok: false, reason: 'invalid:description' };
+  }
+  const entry = { icon: p.icon, description };
+  const oldName = typeof p.oldName === 'string' && p.oldName ? p.oldName : null;
+  let renamed = false;
+
+  if (oldName === null) {
+    if (hasSkill(name)) return { ok: false, reason: 'exists' };
+    if (Object.keys(skillsCatalog).length >= config.SKILLS_MAX) return { ok: false, reason: 'limit' };
+    skillsCatalog[name] = entry;
+  } else {
+    if (!hasSkill(oldName)) return { ok: false, reason: 'not-found' };
+    if (name === oldName) {
+      skillsCatalog[name] = entry;
+    } else {
+      if (hasSkill(name)) return { ok: false, reason: 'exists' };
+      // Переименование с сохранением места в списке: пересобираем объект на месте (на него держат ссылки).
+      const entries = Object.entries(skillsCatalog);
+      entries.forEach(([key]) => { delete skillsCatalog[key]; });
+      entries.forEach(([key, value]) => { skillsCatalog[key === oldName ? name : key] = key === oldName ? entry : value; });
+      characters.forEach((c) => {
+        if (Array.isArray(c.skills)) c.skills = c.skills.map((s) => (s === oldName ? name : s));
+      });
+      renamed = true;
+    }
+  }
+  if (!saveSkillsFile()) return { ok: false, reason: 'save-failed' };
+  if (renamed) saveRoster();
+  return { ok: true };
+}
+
+function removeSkill(name) {
+  if (typeof name !== 'string' || !hasSkill(name)) return { ok: false, reason: 'not-found' };
+  delete skillsCatalog[name];
+  characters.forEach((c) => {
+    if (Array.isArray(c.skills)) c.skills = c.skills.filter((s) => s !== name);
+  });
+  if (!saveSkillsFile()) return { ok: false, reason: 'save-failed' };
+  saveRoster();
+  return { ok: true };
+}
+
+// Список музыки сократился (скрыли примеры из образа), а играл скрытый трек — выключаем: иначе он продолжал
+// бы играть, хотя в списке его уже нет. Возвращает true, если музыка остановлена.
+function stopMusicIfTrackGone() {
+  const id = state.music.trackId;
+  if (id === null || id === undefined) return false;
+  if (listAudio('music').some((e) => e.id === id)) return false;
+  stopMusic();
+  return true;
 }
 
 // Сохраняет назначение аватара персонажу и персистит его в avatars.json,
@@ -1107,7 +1304,8 @@ function pickDiceThrow() {
 }
 
 // DC берётся из текущего значения, заданного мастером (не с клиента).
-// spendResolve: если true и есть Решимость — списать 1 и добавить +2 к сумме.
+// spendResolve: если true и Решимости хватает на цену бонуса — списать её и добавить бонус к сумме
+// (цена и размер бонуса — check.bonus в настройках игры; по умолчанию −1 → +2).
 // label: имя для лога, когда бросок не привязан к персонажу (свободный бросок мастера).
 // Кто бросает: персонаж, NPC или мастер (id нет в справочниках) — общие поля записи лога
 // для rollDice и rollDamage. NPC не имеют Решимости, но имеют те же атрибуты — id
@@ -1138,10 +1336,10 @@ function pushDiceLog(entry) {
   return entry;
 }
 
-// Кубик урона dN (N из config.DAMAGE_DICE): просто показывается всем кубиком на экране и
+// Кубик урона dN (N из настроек игры — check.damageDice): просто показывается всем кубиком на экране и
 // записью лога, HP не меняет — урон применяет ГМ на карточке цели (applyDamage, броня учтена).
 function rollDamage(characterId, sides, label) {
-  if (!config.DAMAGE_DICE.includes(sides)) return null;
+  if (!gameConfig.get().check.damageDice.includes(sides)) return null;
   const { fields } = describeRoller(characterId, label);
   const die = Math.floor(Math.random() * sides) + 1;
   return pushDiceLog({
@@ -1163,12 +1361,14 @@ function rollDamage(characterId, sides, label) {
 function rollDice(characterId, attribute, spendResolve, label) {
   const { c, entity, fields } = describeRoller(characterId, label);
   const attrValue = entity && entity.attributes && entity.attributes[attribute] !== undefined ? entity.attributes[attribute] : 0;
-  const die = Math.floor(Math.random() * 20) + 1;
+  // Кубик, пороги критов, цена и размер бонуса — из настроек игры (check): по умолчанию d20, крит 20/1, −1 → +2.
+  const check = gameConfig.get().check;
+  const die = Math.floor(Math.random() * check.die) + 1;
 
   let resolveBonus = 0;
-  if (spendResolve && c && c.resolve.current > 0) {
-    c.resolve.current = clamp(c.resolve.current - 1, 0, c.resolve.max);
-    resolveBonus = 2;
+  if (spendResolve && c && c.resolve.current >= check.bonus.cost) {
+    c.resolve.current = clamp(c.resolve.current - check.bonus.cost, 0, c.resolve.max);
+    resolveBonus = check.bonus.amount;
   }
 
   const dc = state.currentDc;
@@ -1177,6 +1377,7 @@ function rollDice(characterId, attribute, spendResolve, label) {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     ...fields,
     throw: pickDiceThrow(),
+    sides: check.die, // форма кубика на экране (diceFx.js); у кубика урона sides — свой (type: 'damage')
     attribute,
     die,
     attrValue,
@@ -1184,7 +1385,8 @@ function rollDice(characterId, attribute, spendResolve, label) {
     total,
     dc: dc || null,
     success: dc ? total >= dc : null,
-    critical: die === 20 ? 'success' : die === 1 ? 'fail' : null,
+    critical: check.critSuccess !== null && die >= check.critSuccess ? 'success'
+      : check.critFail !== null && die <= check.critFail ? 'fail' : null,
     time: new Date().toISOString(),
   };
   return pushDiceLog(entry);
@@ -1362,7 +1564,9 @@ const bundledAudio = (kind) => readManifest(path.join(PUBLIC_DIR, 'assets', kind
 function listAudio(kind) {
   const lib = audioLibrary[kind];
   if (!lib) return [];
-  return [...bundledAudio(kind).filter((e) => !lib.removed.includes(e.id)), ...lib.added];
+  // «Показывать примеры из образа» выключено — только то, что добавил ГМ.
+  const bundled = gameConfig.get().showBundled === false ? [] : bundledAudio(kind).filter((e) => !lib.removed.includes(e.id));
+  return [...bundled, ...lib.added];
 }
 
 function addAudioEntry(kind, maxSize, name, dataUrl) {
@@ -1792,16 +1996,18 @@ function clearDrawings() {
 
 // ---- Боевой режим -------------------------------------------------------
 // participants: [{ type: 'character'|'npc', id }] — мастер сам выбирает
-// состав боя. Инициатива — d20+Тело, порядок хода строится по убыванию.
+// состав боя. Инициатива — кубик проверок + атрибут инициативы (по умолчанию d20+Тело; настройки игры, check),
+// порядок хода строится по убыванию.
 function startCombat(participants) {
   if (!Array.isArray(participants)) return state.combat;
+  const check = gameConfig.get().check;
   const order = participants
     .map((p) => {
       const entity = p.type === 'npc' ? findNpc(p.id) : findCharacter(p.id);
       if (!entity) return null;
-      const body = (entity.attributes && entity.attributes.body) || 0;
-      const die = Math.floor(Math.random() * 20) + 1;
-      return { type: p.type, id: p.id, name: entity.name, die, initiative: die + body };
+      const bonus = (entity.attributes && entity.attributes[check.initiativeAttr]) || 0;
+      const die = Math.floor(Math.random() * check.die) + 1;
+      return { type: p.type, id: p.id, name: entity.name, die, initiative: die + bonus };
     })
     .filter(Boolean);
   order.sort((a, b) => b.initiative - a.initiative);
@@ -1918,15 +2124,25 @@ function persistRuntimeState() {
       position: n.position,
     };
   });
+  // Пишем во временный файл и переименовываем: остановка процесса (docker stop, перезапуск) посреди записи
+  // раньше оставляла обрезанный runtime.json — и вся партия (позиции, HP, бой, картинки) терялась при старте.
+  // Переименование поверх файла может не удаться (антивирус держит его на Windows) — тогда пишем напрямую.
   try {
-    fs.writeFileSync(RUNTIME_FILE, JSON.stringify(snapshot));
+    const json = JSON.stringify(snapshot);
+    const tmp = `${RUNTIME_FILE}.tmp`;
+    try {
+      fs.writeFileSync(tmp, json);
+      fs.renameSync(tmp, RUNTIME_FILE);
+    } catch (err) {
+      fs.writeFileSync(RUNTIME_FILE, json);
+    }
   } catch (err) {
     console.warn('Не удалось сохранить runtime.json:', err.message);
   }
 }
 
 // ---- Скрытое имя NPC: маска для игроков ------------------------------------
-// Настоящее имя остаётся в данных (и у ГМ); игрокам вместо него — config.NPC_HIDDEN_NAME.
+// Настоящее имя остаётся в данных (и у ГМ); игрокам вместо него — gameConfig.get().hiddenName.
 // Маска накладывается при выдаче, поэтому снятие галочки сразу возвращает имя везде, в том
 // числе в старых записях журнала бросков и в порядке хода.
 function isNpcNameHidden(id) {
@@ -1936,13 +2152,13 @@ function isNpcNameHidden(id) {
 
 // NPC для игрока: без заметок ГМ, а у скрытого — без имени и роли (поле nameHidden не отдаём).
 function publicNpc({ notes, secret, nameHidden, ...rest }) {
-  return nameHidden ? { ...rest, name: config.NPC_HIDDEN_NAME, role: '' } : rest;
+  return nameHidden ? { ...rest, name: gameConfig.get().hiddenName, role: '' } : rest;
 }
 
 // Порядок хода (state.combat.order или payload combat:started) с замаскированными именами NPC.
 function publicCombatOrder(order) {
   if (!Array.isArray(order)) return order;
-  return order.map((e) => (e.type === 'npc' && isNpcNameHidden(e.id) ? { ...e, name: config.NPC_HIDDEN_NAME } : e));
+  return order.map((e) => (e.type === 'npc' && isNpcNameHidden(e.id) ? { ...e, name: gameConfig.get().hiddenName } : e));
 }
 
 function publicCombat() {
@@ -1952,7 +2168,7 @@ function publicCombat() {
 // Журнал бросков: записи скрытого NPC подписаны маской.
 function publicDiceLog() {
   return state.diceLog.map((e) => (e.kind === 'npc' && isNpcNameHidden(e.characterId)
-    ? { ...e, characterName: config.NPC_HIDDEN_NAME }
+    ? { ...e, characterName: gameConfig.get().hiddenName }
     : e));
 }
 
@@ -1969,6 +2185,8 @@ function getPublicState() {
     // Имя активной локации — игроку нужно для строки «Текущая локация» (списка
     // локаций у него нет, он приходит только в getGMState).
     activeLocationName: (findLocation(activeId) || locations[0]).name,
+    // Настройки игры (название, тема, подписи, параметры проверок) — одинаковы для всех, секретов нет.
+    game: gameConfig.get(),
     skillsCatalog,
     chat: state.chat,
     combat: publicCombat(),
@@ -2024,7 +2242,14 @@ module.exports = {
   setNpcNameHidden,
   isAvatarPresetUrl,
   listAvatarPresets,
+  saveUserPreset,
+  removeUserPreset,
   listAudio,
+  stopMusicIfTrackGone,
+  saveSfx,
+  resetSfx,
+  saveSkill,
+  removeSkill,
   // каталоги в data/ (volume Docker), которые index.js отдаёт под прежними адресами
   storagePaths: {
     avatarUploads: UPLOADS_DIR,
@@ -2032,6 +2257,7 @@ module.exports = {
     presets: USER_PRESETS_DIR,
     music: AUDIO_UPLOAD_DIRS.music,
     sounds: AUDIO_UPLOAD_DIRS.sounds,
+    sfx: SFX_DIR,
   },
   publicCombatOrder,
   setNpcDead,

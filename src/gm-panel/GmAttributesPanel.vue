@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import Icon from './Icon.vue';
 import DamageDice from './DamageDice.vue';
+import { useGame } from './useGame';
 
 // Переиспользует тот же store, что и CharactersPanel (characters/npcs/selected) —
 // ту же выборку строит sidebar, не нужно тащить отдельную копию через bridge.
@@ -10,10 +11,8 @@ const props = defineProps({
   bridge: { type: Object, required: true },
 });
 
-const ATTRIBUTE_LABELS = { body: 'Тело', mind: 'Разум', charisma: 'Харизма' };
-// Те же иконки, что и в public/js/dice.js (ATTR_ICONS) — переиспользуем,
-// чтобы не заводить второй набор эмодзи для одних и тех же атрибутов.
-const ATTRIBUTE_ICONS = window.ATTR_ICONS; // тело/разум/харизма — единый справочник public/js/icons.js
+// Подписи и иконки атрибутов — из настроек игры (те же, что в логе бросков public/js/dice.js).
+const { attr } = useGame();
 
 const activeEntity = computed(() => {
   const sel = props.store.selected;
@@ -43,9 +42,9 @@ function roll(key) {
       v-for="(value, key) in activeEntity?.attributes"
       :key="key"
       class="small"
-      :title="ATTRIBUTE_LABELS[key] || key"
+      :title="attr(key).label"
       @click="roll(key)"
-    ><Icon :name="ATTRIBUTE_ICONS[key] || 'diamond'" /> {{ attrSign(value) }}{{ value }}</button>
+    ><Icon :name="attr(key).icon" /> {{ attrSign(value) }}{{ value }}</button>
   </div>
   <!-- Кубик урона: за выбранную фишку, а без выбора — от «Мастера» -->
   <DamageDice :bridge="bridge" :character-id="activeEntity ? activeEntity.id : null" />

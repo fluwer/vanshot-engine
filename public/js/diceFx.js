@@ -64,14 +64,20 @@
   }
 
   // ---- Звук: небольшой пул, чтобы несколько бросков подряд не обрывали друг друга ----
-  const SOUND_URL = 'assets/sfx/dice-roll.mp3';
+  // Звук — свой у ГМ (настройки игры → sfx.diceRoll) или стандартный; сменился файл — пул собирается заново.
   const pool = [];
+  let poolUrl = null;
   let poolIdx = 0;
   function playRollSound(activeCount) {
     try {
+      const sfx = window.Game.sfx('diceRoll');
+      if (poolUrl !== sfx.url) {
+        pool.length = 0;
+        poolUrl = sfx.url;
+      }
       if (!pool.length) {
         for (let i = 0; i < 4; i += 1) {
-          const a = new Audio(SOUND_URL);
+          const a = new Audio(sfx.url);
           a.preload = 'auto';
           pool.push(a);
         }
@@ -81,13 +87,13 @@
       a.currentTime = 0;
       a.playbackRate = 0.92 + Math.random() * 0.16;
       // Одинаковые клипы складываются синфазно — громкость падает с числом кубиков.
-      a.volume = Math.max(0.12, 0.25 / Math.sqrt(Math.max(1, activeCount)));
+      a.volume = Math.max(0.12, 0.25 / Math.sqrt(Math.max(1, activeCount))) * sfx.volume;
       a.play().catch(() => {});
     } catch (err) { /* звук необязателен */ }
   }
 
   // ---- Вёрстка кубика ----
-  // Форма кубика по числу граней (entry.sides; у броска d20 поля нет — тогда 20): силуэт цвета
+  // Форма кубика по числу граней (entry.sides; у старых записей лога поля нет — тогда 20): силуэт цвета
   // бросающего + тонкие грани. d20 — шестиугольник, кубики урона d4…d12 — свои формы.
   const DIE_OUTLINE = 'fill="var(--dfx-color)" fill-opacity=".92" stroke="rgba(255,255,255,.75)" stroke-width="3" stroke-linejoin="round"';
   const DIE_FACES = {

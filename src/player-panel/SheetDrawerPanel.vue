@@ -1,9 +1,18 @@
 <script setup>
 import { computed } from 'vue';
+import { useGame } from '../gm-panel/useGame';
 
 const props = defineProps({
   store: { type: Object, required: true },
 });
+
+// Подписи ресурсов — из настроек игры; полоски — hp, energy, resolve (класс задаёт цвет), броня — число.
+const { res } = useGame();
+const BARS = [
+  { id: 'hp', cls: '' },
+  { id: 'energy', cls: 'energy' },
+  { id: 'resolve', cls: 'resolve' },
+];
 
 // Лист персонажа — верхняя часть блока «Персонаж» (ниже — навыки и инвентарь,
 // SkillsInventoryPanel). Шапку с заголовком блока и ✕ даёт Dock, здесь — только
@@ -21,23 +30,13 @@ function pct(stat) {
   <h2>{{ character ? `${character.name} — ${character.title}` : '—' }}</h2>
   <template v-if="character">
     <p class="muted">{{ character.hook }}</p>
-    <div class="row">
-      <span class="stat-label">HP</span>
-      <div class="bar-track"><div class="bar-fill" :style="{ width: `${pct('hp')}%` }"></div></div>
-      <span>{{ character.hp.current }}/{{ character.hp.max }}</span>
+    <div v-for="bar in BARS" :key="bar.id" class="row">
+      <span class="stat-label">{{ res(bar.id).label }}</span>
+      <div class="bar-track"><div class="bar-fill" :class="bar.cls" :style="{ width: `${pct(bar.id)}%` }"></div></div>
+      <span>{{ character[bar.id].current }}/{{ character[bar.id].max }}</span>
     </div>
     <div class="row">
-      <span class="stat-label">Энергия</span>
-      <div class="bar-track"><div class="bar-fill energy" :style="{ width: `${pct('energy')}%` }"></div></div>
-      <span>{{ character.energy.current }}/{{ character.energy.max }}</span>
-    </div>
-    <div class="row">
-      <span class="stat-label">Решимость</span>
-      <div class="bar-track"><div class="bar-fill resolve" :style="{ width: `${pct('resolve')}%` }"></div></div>
-      <span>{{ character.resolve.current }}/{{ character.resolve.max }}</span>
-    </div>
-    <div class="row">
-      <span class="stat-label">Броня</span>
+      <span class="stat-label">{{ res('armor').label }}</span>
       <span>{{ character.armor }}</span>
     </div>
     <p class="muted small">{{ character.backstory || '' }}</p>
