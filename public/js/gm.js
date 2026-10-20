@@ -176,7 +176,7 @@ socket.on('state', (state) => {
   window.charactersPanelApp?.updateState(state.characters, state.npcs, state.skillsCatalog, state.locations);
   window.diceLogPanelApp?.updateState(state.diceLog);
   renderChat(state.chat);
-  window.combatPanelApp?.updateState(state.combat, state.characters, state.npcs);
+  window.combatPanelApp?.updateState(state.combat, state.characters, state.npcs, state.activeLocationId);
   window.mapToolsPanelApp?.updateState(state.mapImages || [], state.locations || [], state.activeLocationId);
   applyMusicState(state.music);
   mapController.updateState(state);

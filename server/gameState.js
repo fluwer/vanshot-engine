@@ -2009,6 +2009,8 @@ function startCombat(participants) {
     .map((p) => {
       const entity = p.type === 'npc' ? findNpc(p.id) : findCharacter(p.id);
       if (!entity) return null;
+      // NPC с другой локации на открытой карте нет — в бой не берём (клиент их и не присылает).
+      if (p.type === 'npc' && entity.locationId !== state.activeLocationId) return null;
       const bonus = (entity.attributes && entity.attributes[check.initiativeAttr]) || 0;
       const die = Math.floor(Math.random() * check.die) + 1;
       return { type: p.type, id: p.id, name: entity.name, die, initiative: die + bonus };

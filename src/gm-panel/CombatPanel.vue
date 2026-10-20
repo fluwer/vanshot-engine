@@ -34,15 +34,24 @@ function togglePicked(type, id) {
 // Мёртвых не трогаем — если ГМ уже отметил мёртвого вручную, отметка остаётся.
 function pickAllAlive() {
   props.store.characters.forEach((c) => { if (!c.dead) picked[`character:${c.id}`] = true; });
-  props.store.npcs.forEach((n) => { if (!n.dead) picked[`npc:${n.id}`] = true; });
+  locationNpcs.value.forEach((n) => { if (!n.dead) picked[`npc:${n.id}`] = true; });
 }
 function pickNone() {
   Object.keys(picked).forEach((key) => { picked[key] = false; });
 }
 
+// В чеклисте — только NPC открытой локации: остальных на карте нет, в бой их не позвать.
+// store.npcs остаётся полным (фракции строк хода ищутся по нему).
+const locationNpcs = computed(() => props.store.npcs.filter((n) => n.locationId === props.store.activeLocationId));
+
 function onStart() {
+  // picked переживает смену локации: отметка ушедшего с карты NPC не должна попасть в бой «невидимкой».
+  const shown = new Set([
+    ...props.store.characters.map((c) => `character:${c.id}`),
+    ...locationNpcs.value.map((n) => `npc:${n.id}`),
+  ]);
   const participants = Object.entries(picked)
-    .filter(([, checked]) => checked)
+    .filter(([key, checked]) => checked && shown.has(key))
     .map(([key]) => {
       const [type, id] = key.split(':');
       return { type, id };
@@ -88,9 +97,10 @@ function onRowClick(entry) {
           <input type="checkbox" :checked="picked[`character:${c.id}`]" @change="togglePicked('character', c.id)"> {{ c.name }}<Icon v-if="c.dead" name="skull" class="ico-dead" title="Убит" />
         </label>
         <div class="combat-pick-group-label"><Icon name="drama" /> NPC</div>
-        <label v-for="n in store.npcs" :key="`npc-${n.id}`" class="combat-pick" :class="{ dead: n.dead }">
+        <label v-for="n in locationNpcs" :key="`npc-${n.id}`" class="combat-pick" :class="{ dead: n.dead }">
           <input type="checkbox" :checked="picked[`npc:${n.id}`]" @change="togglePicked('npc', n.id)"> {{ n.name }}<Icon v-if="n.dead" name="skull" class="ico-dead" title="Убит" /><Icon v-if="!n.dead && !n.visible" name="eye-off" class="ico-dead" title="Скрыт от игроков" />
         </label>
+        <div v-if="!locationNpcs.length" class="combat-pick-empty muted small">На этой локации нет NPC</div>
       </div>
       <button class="small wide primary" :title="`Бросить инициативу (${initiativeHint}) и начать бой отмеченными участниками`" @click="onStart"><Icon name="d20" /> Начать бой</button>
     </div>

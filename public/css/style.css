@@ -297,6 +297,7 @@ h3 {
   padding: 3px 6px; border-radius: var(--r-sm); cursor: pointer;
 }
 .combat-pick:hover { background: var(--surface-3); }
+.combat-pick-empty { padding: 3px 6px; }
 .combat-pick-group-label {
   font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint);
   font-stretch: var(--stretch-cond);

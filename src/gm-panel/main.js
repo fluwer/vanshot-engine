@@ -69,17 +69,20 @@ const combatStore = reactive({
   combat: { active: false, round: 0, order: [], currentIndex: 0 },
   characters: [],
   npcs: [],
+  // Открытая локация: в чеклисте боя показываем NPC только с неё (CombatPanel.vue).
+  activeLocationId: null,
 });
 let fxHolding = false;
 let pendingCombatState = null;
 window.combatPanelApp = {
-  updateState(combat, characters, npcs) {
+  updateState(combat, characters, npcs, activeLocationId) {
     if (fxHolding) {
-      pendingCombatState = { combat, characters, npcs };
+      pendingCombatState = { combat, characters, npcs, activeLocationId };
     } else {
       combatStore.combat = combat;
       combatStore.characters = characters;
       combatStore.npcs = npcs;
+      combatStore.activeLocationId = activeLocationId ?? null;
     }
   },
   setFxHolding(holding) {
@@ -88,6 +91,7 @@ window.combatPanelApp = {
       combatStore.combat = pendingCombatState.combat;
       combatStore.characters = pendingCombatState.characters;
       combatStore.npcs = pendingCombatState.npcs;
+      combatStore.activeLocationId = pendingCombatState.activeLocationId ?? null;
       pendingCombatState = null;
     }
   },
