@@ -340,8 +340,9 @@ const state = {
   // startedAt — момент (Date.now()), от которого считается позиция в треке
   // (виртуальный старт, сдвинутый на pausedAt при возобновлении — см. playMusic),
   // pausedAt — позиция в секундах на момент постановки на паузу/остановки.
+  // mode — что делать, когда трек доиграл (loop/list/shuffle, config.MUSIC_MODES): общий для всех, переживает стоп и смену трека.
   // Громкость — чисто клиентская настройка, сюда не входит.
-  music: (initialRuntime && initialRuntime.music) || { trackId: null, playing: false, startedAt: null, pausedAt: 0 },
+  music: normalizeMusic(initialRuntime && initialRuntime.music),
   // Погода на экране: одна на всю игру (не по локациям), задаёт ГМ — setWeather.
   // Рисует клиент (public/js/weather.js), сервер только хранит и раздаёт.
   weather: normalizeWeather(initialRuntime && initialRuntime.weather),
@@ -1525,10 +1526,55 @@ function setWeather(patch) {
 // виртуально: startedAt — момент, от которого отсчитывается currentTime
 // (Date.now()-startedAt)/1000, сдвинутый на pausedAt при возобновлении, —
 // клиенты сами крутят audio.currentTime под это, сервер только хранит числа.
+// Состояние музыки из runtime.json (или пустое): неизвестный/отсутствующий mode (старые сохранения) — loop.
+function normalizeMusic(saved) {
+  const mode = saved && config.MUSIC_MODES.includes(saved.mode) ? saved.mode : 'loop';
+  if (!saved || typeof saved !== 'object') return { trackId: null, playing: false, startedAt: null, pausedAt: 0, mode };
+  return { ...saved, mode };
+}
+
 function setMusicTrack(trackId) {
   if (typeof trackId !== 'string' || !trackId) return state.music;
-  state.music = { trackId, playing: true, startedAt: Date.now(), pausedAt: 0 };
+  state.music = { trackId, playing: true, startedAt: Date.now(), pausedAt: 0, mode: state.music.mode };
   return state.music;
+}
+
+// Режим «что делать, когда трек доиграл» — строго из списка config.MUSIC_MODES.
+function setMusicMode(mode) {
+  if (!config.MUSIC_MODES.includes(mode)) return false;
+  state.music.mode = mode;
+  return true;
+}
+
+// Перемотка на position секунд (только число, зажимается в [0, MUSIC_SEEK_MAX_S]): на ходу сдвигаем виртуальный старт,
+// на паузе — позицию паузы (воспроизведение при этом не стартует). Нет трека — ничего.
+function seekMusic(position) {
+  if (typeof position !== 'number' || !Number.isFinite(position) || !state.music.trackId) return false;
+  const pos = clamp(position, 0, config.MUSIC_SEEK_MAX_S);
+  if (state.music.playing) state.music.startedAt = Date.now() - pos * 1000;
+  else state.music.pausedAt = pos;
+  return true;
+}
+
+// Следующий/предыдущий трек (dir = 1 / −1) — кнопки ГМа и автосмена по окончании трека (auto). fromId — трек, который
+// клиент считал играющим: устаревший клик и двойное событие от двух окон ГМа не переключают лишний раз. Порядок —
+// как в списке треков (listAudio); вперёд в режиме shuffle — случайный, отличный от текущего; назад — по списку.
+// Автосмена в режиме loop ничего не делает (трек крутится сам); одиночный трек в list/shuffle стартует заново.
+function skipMusicTrack(dir, fromId, auto) {
+  const current = state.music.trackId;
+  if (!current || fromId !== current) return false;
+  if (auto && state.music.mode === 'loop') return false;
+  const list = listAudio('music');
+  if (!list.length) return false;
+  const idx = list.findIndex((e) => e.id === current);
+  let next;
+  if (dir === -1) next = list[idx > 0 ? idx - 1 : list.length - 1];
+  else if (state.music.mode === 'shuffle' && list.length > 1) {
+    const others = list.filter((e) => e.id !== current);
+    next = others[Math.floor(Math.random() * others.length)];
+  } else next = list[(idx + 1) % list.length];
+  setMusicTrack(next.id);
+  return true;
 }
 
 function playMusic() {
@@ -1546,7 +1592,7 @@ function pauseMusic() {
 }
 
 function stopMusic() {
-  state.music = { trackId: null, playing: false, startedAt: null, pausedAt: 0 };
+  state.music = { trackId: null, playing: false, startedAt: null, pausedAt: 0, mode: state.music.mode };
   return state.music;
 }
 
@@ -2496,6 +2542,9 @@ module.exports = {
   getFog,
   setWeather,
   setMusicTrack,
+  setMusicMode,
+  seekMusic,
+  skipMusicTrack,
   playMusic,
   pauseMusic,
   stopMusic,

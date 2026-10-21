@@ -33,6 +33,9 @@ play
 pause
 square
 skip-forward
+skip-back
+repeat
+repeat-1
 
 # --- кости и результат броска
 d20

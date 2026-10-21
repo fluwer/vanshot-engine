@@ -804,6 +804,25 @@ io.on('connection', (socket) => {
     broadcastState();
   });
 
+  // Режим «что делать, когда трек доиграл» (повтор / по списку / случайно) — общий для всех.
+  socket.on('music:mode', ({ mode }) => {
+    if (socket.data.role !== 'gm') return;
+    if (gameState.setMusicMode(mode)) broadcastState();
+  });
+
+  // Перемотка на секунду position: клиенты сами подгоняют свой <audio> под серверную позицию.
+  socket.on('music:seek', ({ position }) => {
+    if (socket.data.role !== 'gm') return;
+    if (gameState.seekMusic(position)) broadcastState();
+  });
+
+  // Следующий/предыдущий трек: кнопки ГМа и автосмена по окончании трека (auto — шлёт страница ГМа на 'ended').
+  // from — трек, который клиент считал играющим (устаревший клик и событие от второго окна ГМа игнорируются).
+  socket.on('music:next', ({ dir, from, auto }) => {
+    if (socket.data.role !== 'gm') return;
+    if (gameState.skipMusicTrack(dir === -1 ? -1 : 1, from, auto === true)) broadcastState();
+  });
+
   // Загрузка/удаление звуков и треков — только мастер. Манифест не приватный,
   // поэтому обновление шлём всем через io.emit, а не по комнатам gm/players.
   socket.on('sound:upload', ({ name, dataUrl }, ack) => {

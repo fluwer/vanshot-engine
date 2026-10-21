@@ -30,6 +30,12 @@ onMounted(() => {
     nowPlayingId: 'music-now-playing',
     volumeId: 'music-volume',
     volumeValueId: 'music-volume-value',
+    // Предыдущий/следующий трек, режим «после окончания трека» и ползунок позиции (перемотка) — только у ГМа.
+    prevId: 'music-prev',
+    nextId: 'music-next',
+    seekId: 'music-seek',
+    timeId: 'music-time',
+    modeIds: { loop: 'music-mode-loop', list: 'music-mode-list', shuffle: 'music-mode-shuffle' },
   });
 });
 
@@ -103,12 +109,26 @@ function onMusicFileChange(e) {
         <select id="music-track-select"></select>
       </div>
       <div class="row" style="gap:4px">
+        <button id="music-prev" class="fog-btn" data-tip="Предыдущий трек (по списку)" aria-label="Предыдущий трек" disabled><Icon name="skip-back" /></button>
         <button id="music-play" class="fog-btn" title="Играть" aria-label="Играть"><Icon name="play" /></button>
         <button id="music-pause" class="fog-btn" title="Пауза" aria-label="Пауза"><Icon name="pause" /></button>
         <button id="music-stop" class="fog-btn" title="Стоп" aria-label="Стоп"><Icon name="square" /></button>
+        <button id="music-next" class="fog-btn" data-tip="Следующий трек (по списку; в режиме «Случайно» — случайный)" aria-label="Следующий трек" disabled><Icon name="skip-forward" /></button>
         <button id="music-delete" class="fog-btn danger" v-show="editMode" title="Удалить трек" aria-label="Удалить трек"><Icon name="x" /></button>
       </div>
       <p class="muted small" id="music-now-playing">Тишина</p>
+      <div class="fog-group">
+        <span class="fog-label">Позиция: <span id="music-time">0:00 / 0:00</span></span>
+        <input id="music-seek" type="range" min="0" max="0" step="1" value="0" disabled aria-label="Позиция в треке (перемотка)">
+      </div>
+      <div class="fog-group">
+        <span class="fog-label">Когда трек закончится</span>
+        <div class="row" style="gap:4px">
+          <button id="music-mode-loop" class="fog-btn" data-tip="Повтор трека" aria-label="Повтор трека"><Icon name="repeat-1" /></button>
+          <button id="music-mode-list" class="fog-btn" data-tip="Следующий по списку, по кругу" aria-label="Следующий по списку, по кругу"><Icon name="repeat" /></button>
+          <button id="music-mode-shuffle" class="fog-btn" data-tip="Случайный трек" aria-label="Случайный трек"><Icon name="shuffle" /></button>
+        </div>
+      </div>
       <div class="fog-group">
         <span class="fog-label ico-label" title="Громкость слышна только вам"><Icon name="volume-2" /> <span id="music-volume-value">50</span>%</span>
         <input id="music-volume" type="range" min="0" max="100" value="50">
