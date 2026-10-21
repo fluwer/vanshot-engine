@@ -114,6 +114,11 @@ const WALK_MAX_STEPS = 40;    // путь длиннее — телепорт Г
 const WALK_BOB_PX = 2;        // высота подпрыгивания токена на шаге (мировые px)
 const WALK_FX_MAX = 300;      // предел частиц ходьбы одновременно (старые отбрасываем)
 const WALK_DUST_MS = 420;     // жизнь облачка пыли
+// Пасхалка «молния бьёт по фишке игрока» (сервер: gameState.planLightningHits, событие vfx:play с hits).
+const STRIKE_FLASH_MS = 260;  // свечение и дрожь токена после удара
+const KNOCK_MS = 300;         // полёт фишки на соседнюю клетку (прямая, диагональ допустима)
+const KNOCK_LIFT_PX = 8;      // высота дуги полёта (мировые px)
+const KNOCK_WAIT_MS = 2000;   // сколько ждём state с отлётом после vfx:play (сервер двигает фишку через ~150 мс)
 const WALK_PRINT_MS = 1100;   // жизнь следа
 
 function createMapController({ canvas, role, myCharacterId }) {
@@ -566,6 +571,10 @@ function createMapController({ canvas, role, myCharacterId }) {
   const tokenAnims = new Map();       // key -> { path: [{x,y}], cum: [число клеток от старта], total, startedAt, stepMs }
   let walkFx = [];                    // [{ kind: 'dust'|'print', x, y, startedAt, duration, seed, angle, side, ownerKey, isNpc, faint }]
   let skipNextAnim = false;           // следующий state применить без анимации (реконнект)
+  // Пасхалка «молния бьёт по фишке игрока»: key -> время удара (свечение и дрожь токена) и key -> { to, until } —
+  // сдвиг на эту клетку, который вот-вот придёт в state, рисуем как отлёт, а не как ходьбу.
+  const strikes = new Map();
+  const pendingKnocks = new Map();
   const reduceMotionQuery = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
 
   // Детерминированный псевдослучайный сдвиг по seed — частицы должны быть
@@ -576,9 +585,22 @@ function createMapController({ canvas, role, myCharacterId }) {
     return x - Math.floor(x);
   }
 
-  function playEffect(type, x, y) {
+  // hits — только у молнии, попавшей в фишку игрока: [{ id, from, to }] (сервер уже привязал x, y к центру клетки).
+  // Разряд такой молнии рисуется поверх токенов (drawHitLightning), а токен вспыхивает и потом отлетает на to.
+  function playEffect(type, x, y, hits) {
     const duration = VFX_DURATION[type] || 1500;
-    activeEffects.push({ type, x, y, startedAt: performance.now(), duration });
+    const now = performance.now();
+    const fx = { type, x, y, startedAt: now, duration };
+    if (type === 'lightning' && Array.isArray(hits)) {
+      hits.forEach((h) => {
+        if (!h || typeof h.id !== 'string' || !h.to || !Number.isFinite(h.to.x) || !Number.isFinite(h.to.y)) return;
+        const key = tokenKey('character', h.id);
+        strikes.set(key, now);
+        pendingKnocks.set(key, { to: { x: h.to.x, y: h.to.y }, until: now + KNOCK_WAIT_MS });
+        fx.hit = true;
+      });
+    }
+    activeEffects.push(fx);
     startAnimLoop();
   }
 
@@ -594,6 +616,8 @@ function createMapController({ canvas, role, myCharacterId }) {
     tokenAnims.forEach((a, key) => {
       if (now - a.startedAt >= a.total * a.stepMs) tokenAnims.delete(key);
     });
+    strikes.forEach((at, key) => { if (now - at >= STRIKE_FLASH_MS) strikes.delete(key); });
+    pendingKnocks.forEach((p, key) => { if (now > p.until) pendingKnocks.delete(key); });
     draw();
     animRafId = (activeEffects.length || walkFx.length || tokenAnims.size)
       ? requestAnimationFrame(animLoop)
@@ -622,13 +646,37 @@ function createMapController({ canvas, role, myCharacterId }) {
     return path;
   }
 
-  // Текущая отображаемая поза токена: позиция в клетках (дробная) и высота
-  // подпрыгивания. Нет анимации — логическая позиция.
+  // Текущая отображаемая поза токена: позиция в клетках (дробная), высота подпрыгивания и, если в токен
+  // только что ударила молния (пасхалка), дрожь dx/dy (мировые px) и свечение flash 0…1. Нет анимации — логическая позиция.
   function getTokenPose(key, position, now) {
+    const pose = movePose(key, position, now);
+    const struck = strikes.get(key);
+    if (struck !== undefined && now >= struck && now - struck < STRIKE_FLASH_MS) {
+      const k = 1 - (now - struck) / STRIKE_FLASH_MS;
+      const frame = Math.floor(now / 30); // дрожь меняется ~33 раза в секунду, а не каждый кадр
+      pose.flash = k;
+      pose.dx = (prand(frame) - 0.5) * 2.4 * k;
+      pose.dy = (prand(frame + 7) - 0.5) * 2.4 * k;
+    }
+    return pose;
+  }
+
+  // Поза по анимации движения (ходьба или отлёт).
+  function movePose(key, position, now) {
     const a = tokenAnims.get(key);
     if (!a) return { x: position.x, y: position.y, lift: 0 };
     const dist = (now - a.startedAt) / a.stepMs;
     if (dist >= a.total) return { x: position.x, y: position.y, lift: 0 };
+    if (a.knock) {
+      // Отлёт от удара молнии: прямая на соседнюю клетку (диагональ допустима), быстро в начале и с замедлением
+      // к концу, по дуге.
+      const e = 1 - Math.pow(1 - dist, 3);
+      return {
+        x: a.path[0].x + (a.path[1].x - a.path[0].x) * e,
+        y: a.path[0].y + (a.path[1].y - a.path[0].y) * e,
+        lift: Math.sin(Math.PI * dist) * KNOCK_LIFT_PX,
+      };
+    }
     let i = 1;
     while (i < a.cum.length - 1 && a.cum[i] <= dist) i++;
     const segLen = a.cum[i] - a.cum[i - 1];
@@ -690,6 +738,33 @@ function createMapController({ canvas, role, myCharacterId }) {
     if (walkFx.length > WALK_FX_MAX) walkFx = walkFx.slice(walkFx.length - WALK_FX_MAX);
   }
 
+  // Отлёт фишки от удара молнии (пасхалка): from -> to по прямой за KNOCK_MS, в клетке старта — облачко пыли.
+  // Запись в tokenAnims такая же, как у ходьбы, поэтому общий animLoop, очистка и «идёт ли токен» работают как есть.
+  function startKnockAnim(key, from, to, now) {
+    tokenAnims.set(key, {
+      path: [{ x: from.x, y: from.y }, { x: to.x, y: to.y }],
+      cum: [0, 1],
+      total: 1,
+      startedAt: now,
+      stepMs: KNOCK_MS,
+      knock: true,
+    });
+    const cellSize = currentState.map.cellSize;
+    walkFx.push({
+      kind: 'dust',
+      x: (from.x + 0.5) * cellSize,
+      y: (from.y + 0.5) * cellSize + 20,
+      startedAt: now,
+      duration: WALK_DUST_MS,
+      seed: now + 5,
+      angle: Math.atan2(to.y - from.y, to.x - from.x),
+      ownerKey: key,
+      isNpc: false,
+      faint: false,
+    });
+    if (walkFx.length > WALK_FX_MAX) walkFx = walkFx.slice(walkFx.length - WALK_FX_MAX);
+  }
+
   // Сравнивает позиции токенов с прошлым state и запускает анимацию для
   // сместившихся. skip — применить без анимации (первый state, смена локации,
   // фоновая вкладка, reduced-motion, реконнект).
@@ -702,7 +777,15 @@ function createMapController({ canvas, role, myCharacterId }) {
       next.set(key, to);
       const from = lastLogical.get(key);
       if (!from || (from.x === to.x && from.y === to.y)) return;
+      // Сдвиг на соседнюю клетку, о котором предупредила молния (vfx:play с hits), — отлёт, а не ходьба.
+      const knock = pendingKnocks.get(key);
+      if (knock) pendingKnocks.delete(key);
       if (skip || entity.dead) { tokenAnims.delete(key); return; }
+      if (!isNpc && knock && now <= knock.until && knock.to.x === to.x && knock.to.y === to.y
+          && Math.max(Math.abs(to.x - from.x), Math.abs(to.y - from.y)) === 1) {
+        startKnockAnim(key, from, to, now);
+        return;
+      }
       startTokenAnim(key, isNpc, role === 'gm' && isNpc && !entity.visible, from, to, now);
     };
     (state.characters || []).forEach((c) => consider(tokenKey('character', c.id), c, false));
@@ -943,6 +1026,7 @@ function createMapController({ canvas, role, myCharacterId }) {
     if (!activeEffects.length) return;
     const now = performance.now();
     activeEffects.forEach((fx) => {
+      if (fx.hit) return; // молния, попавшая в фишку игрока, рисуется позже — поверх токенов (drawHitLightning)
       const t = Math.min(1, (now - fx.startedAt) / fx.duration);
       if (fx.type === 'smoke') drawSmoke(fx, t);
       else if (fx.type === 'fire') drawFire(fx, t, now);
@@ -950,6 +1034,16 @@ function createMapController({ canvas, role, myCharacterId }) {
       else if (fx.type === 'explosion') drawExplosion(fx, t);
       else if (fx.type === 'lightning') drawLightning(fx, t);
       else if (fx.type === 'magic') drawMagic(fx, t);
+    });
+  }
+
+  // Пасхалка: молния, попавшая в фишку игрока, бьёт ПОВЕРХ токенов (обычные эффекты лежат под ними и фишку
+  // перекрыли бы) — разряд виден прямо на фишке, в том числе над туманом, как и сам токен.
+  function drawHitLightning() {
+    if (!activeEffects.length) return;
+    const now = performance.now();
+    activeEffects.forEach((fx) => {
+      if (fx.hit) drawLightning(fx, Math.min(1, (now - fx.startedAt) / fx.duration));
     });
   }
 
@@ -2245,9 +2339,10 @@ function createMapController({ canvas, role, myCharacterId }) {
     // ringWidth — толщина кольца вокруг аватара (у NPC толще: цвет фракции должен читаться).
     // marker — { shape, color } значок фракции NPC перед нижней строкой подписи (имя).
     function drawToken(entity, pose, isSelected, fallbackColor, labelLines, isDead, ringWidth = 2, marker = null) {
-      const cx = (pose.x + 0.5) * cellSize;
+      const baseX = (pose.x + 0.5) * cellSize;           // подпись стоит на месте, даже когда токен дрожит от удара молнии
+      const cx = baseX + (pose.dx || 0);
       const groundY = (pose.y + 0.5) * cellSize + 20;
-      const cy = groundY - pose.lift;
+      const cy = groundY - pose.lift + (pose.dy || 0);
       const r = cellSize * 0.35;
       const avatarImg = getAvatarImage(entity.avatar, draw);
 
@@ -2290,6 +2385,21 @@ function createMapController({ canvas, role, myCharacterId }) {
         ctx.textBaseline = 'alphabetic';
       }
 
+      // Свечение от удара молнии (пасхалка): бело-голубая вспышка, тающая за STRIKE_FLASH_MS.
+      if (pose.flash) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 1.9);
+        glow.addColorStop(0, `rgba(235,245,255,${0.9 * pose.flash})`);
+        glow.addColorStop(0.5, `rgba(150,190,255,${0.5 * pose.flash})`);
+        glow.addColorStop(1, 'rgba(120,170,255,0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * 1.9, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
       // Крестик поверх иконки — NPC отмечен мастером как убитый.
       if (isDead) {
         ctx.save();
@@ -2319,15 +2429,15 @@ function createMapController({ canvas, role, myCharacterId }) {
           const mr = fontPx * 0.5;
           const gap = fontPx * 0.35;
           const textW = ctx.measureText(line).width;
-          const left = cx - (mr * 2 + gap + textW) / 2;
+          const left = baseX - (mr * 2 + gap + textW) / 2;
           drawFactionMarker(ctx, marker.shape, left + mr, y - fontPx * 0.33, mr, marker.color, Math.max(1, cellSize * 0.05) / camera.zoom);
           ctx.textAlign = 'left';
           ctx.strokeText(line, left + mr * 2 + gap, y);
           ctx.fillText(line, left + mr * 2 + gap, y);
           ctx.textAlign = 'center';
         } else {
-          ctx.strokeText(line, cx, y);
-          ctx.fillText(line, cx, y);
+          ctx.strokeText(line, baseX, y);
+          ctx.fillText(line, baseX, y);
         }
       });
     }
@@ -2361,6 +2471,9 @@ function createMapController({ canvas, role, myCharacterId }) {
         ctx.globalAlpha = 1;
       });
     }
+
+    // Удар молнии по фишке игрока — поверх токенов (пасхалка, см. drawHitLightning).
+    drawHitLightning();
 
     // Линейка — поверх токенов (линия читается над ними), но под рамкой картинки. Концы —
     // центры клеток; подпись — плашка над концом B; размеры делим на zoom, чтобы линия и
@@ -2596,6 +2709,14 @@ function createMapController({ canvas, role, myCharacterId }) {
     clearRuler,
     setRulerChangeHandler: (fn) => { rulerChangeHandler = fn; },
     playEffect,
+    // Отображаемая позиция токена в клетках (дробная при ходьбе и отлёте) — для тестов.
+    getTokenDisplayPos: (type, id) => {
+      const list = type === 'npc' ? (currentState && currentState.npcs) : (currentState && currentState.characters);
+      const e = list && list.find((t) => t.id === id);
+      if (!e || !e.position) return null;
+      const pose = movePose(tokenKey(type, id), e.position, performance.now());
+      return { x: pose.x, y: pose.y, lift: pose.lift };
+    },
   };
 }
 

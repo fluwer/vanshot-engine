@@ -107,7 +107,7 @@ mapController.setDrawUndoHandler(() => socket.emit('drawing:undo')); // ПКМ �
 
 // ---- Спецэффекты (дым/огонь/фейерверк) — доступны и ГМ, и игрокам ----
 mapController.setVfxPlaceHandler((type, x, y) => socket.emit('vfx:trigger', { type, x, y }));
-socket.on('vfx:play', ({ type, x, y }) => mapController.playEffect(type, x, y));
+socket.on('vfx:play', ({ type, x, y, hits }) => mapController.playEffect(type, x, y, hits));
 
 socket.on('connect', () => {
   mapController.skipNextTokenAnimation(); // после реконнекта позиции — без проигрывания ходьбы

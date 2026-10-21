@@ -479,7 +479,25 @@ io.on('connection', (socket) => {
   socket.on('vfx:trigger', ({ type, x, y }) => {
     if (!config.VFX_TYPES.includes(type)) return;
     if (typeof x !== 'number' || typeof y !== 'number' || !Number.isFinite(x) || !Number.isFinite(y)) return;
-    io.emit('vfx:play', { type, x, y });
+    // Пасхалка: молния, попавшая в клетку с фишкой игрока, бьёт по ней и отбрасывает на клетку (план — gameState).
+    // Двигают фишки только вошедшие ГМ и игроки: наблюдатель молнию ставит, но никого не отбрасывает.
+    const hits = type === 'lightning' && drawAuthor() ? gameState.planLightningHits(x, y) : [];
+    if (!hits.length) {
+      io.emit('vfx:play', { type, x, y });
+      return;
+    }
+    // Разряд бьёт ровно в центр клетки с фишкой; клиенты сами показывают вспышку и отлёт по hits,
+    // а положение сервер меняет чуть позже — после вспышки.
+    const cell = hits[0].from;
+    io.emit('vfx:play', {
+      type,
+      x: (cell.x + 0.5) * config.CELL_SIZE,
+      y: (cell.y + 0.5) * config.CELL_SIZE + 20,
+      hits,
+    });
+    setTimeout(() => {
+      if (gameState.applyLightningHits(hits)) broadcastState();
+    }, config.LIGHTNING_HIT_DELAY_MS);
   });
 
   // Погода на экране — одна на всю игру, задаёт только мастер: { mode, intensity }.

@@ -1263,6 +1263,46 @@ function forceMoveNpc(npcId, target) {
   return { ok: true };
 }
 
+// ---- Пасхалка: молния отбрасывает фишку игрока ------------------------------
+// Молния попала в точку (x, y) — мировые px, как у токенов: клетка = floor(x / CELL_SIZE), floor((y − 20) / CELL_SIZE).
+// Бьёт по клетке: каждый живой персонаж в ней (NPC не трогаем) отлетает на одну клетку в случайную из 8 сторон.
+// HP, энергия и ход в бою не меняются. Сначала план (направление выбирает сервер — у всех клиентов анимация
+// одна), через LIGHTNING_HIT_DELAY_MS — применение (см. vfx:trigger в index.js).
+const lightningKnockUntil = new Map(); // id персонажа -> время (мс), до которого его снова не отбрасываем
+
+function planLightningHits(x, y) {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return [];
+  const cx = Math.floor(x / config.CELL_SIZE);
+  const cy = Math.floor((y - 20) / config.CELL_SIZE);
+  const now = Date.now();
+  const location = getActiveLocation();
+  const hits = [];
+  characters.forEach((c) => {
+    if (c.dead || !c.position || c.position.x !== cx || c.position.y !== cy) return;
+    if ((lightningKnockUntil.get(c.id) || 0) > now) return;
+    const dirs = config.LIGHTNING_KNOCK_DIRS.filter((d) => map.isWalkable(location, cx + d.dx, cy + d.dy));
+    if (!dirs.length) return;
+    const d = dirs[Math.floor(Math.random() * dirs.length)];
+    lightningKnockUntil.set(c.id, now + config.LIGHTNING_KNOCK_COOLDOWN_MS);
+    hits.push({ id: c.id, from: { x: cx, y: cy }, to: { x: cx + d.dx, y: cy + d.dy } });
+  });
+  return hits;
+}
+
+// Применяет отлёты из плана. Персонаж, которого за время задержки переставили (ГМ, смена локации) или убили, не
+// трогаем — иначе его «вернуло» бы назад. true — кто-то сдвинулся (нужна рассылка state).
+function applyLightningHits(hits) {
+  let moved = false;
+  (Array.isArray(hits) ? hits : []).forEach((h) => {
+    const c = h && h.from && h.to && findCharacter(h.id);
+    if (!c || c.dead || !c.position || c.position.x !== h.from.x || c.position.y !== h.from.y) return;
+    if (!map.isWalkable(getActiveLocation(), h.to.x, h.to.y)) return;
+    c.position = { x: h.to.x, y: h.to.y };
+    moved = true;
+  });
+  return moved;
+}
+
 // Подсветка достижимых клеток нужна только в бою (вне боя перемещение
 // свободное — см. moveCharacter, клиент не гейтит тап по reachable).
 function getReachableCells(characterId) {
@@ -2444,6 +2484,8 @@ module.exports = {
   moveCharacter,
   forceMoveCharacter,
   forceMoveNpc,
+  planLightningHits,
+  applyLightningHits,
   getReachableCells,
   rollDice,
   rollDamage,

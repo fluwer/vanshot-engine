@@ -93,8 +93,8 @@ socket.on('connect', () => {
 
 // Спецэффекты могут прилететь до join (mapController ещё null) — как и
 // fog:update, просто игнорируем в этом случае.
-socket.on('vfx:play', ({ type, x, y }) => {
-  if (mapController) mapController.playEffect(type, x, y);
+socket.on('vfx:play', ({ type, x, y, hits }) => {
+  if (mapController) mapController.playEffect(type, x, y, hits);
 });
 
 // Вызывается из JoinForm.vue (через window.playerBridge.onJoined) после
