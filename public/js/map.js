@@ -1510,6 +1510,8 @@ function createMapController({ canvas, role, myCharacterId }) {
       initCamera();
       cameraInitialized = true;
     }
+    // Под курсором (ГМ) уже показаны заметки: фишку могли переставить, заметки — поправить; без мигания обновляем.
+    if (hoverCellKey !== null) emitTokenHover();
     // Есть что анимировать — запускаем цикл (он сам делает draw() на каждом кадре).
     if (tokenAnims.size || walkFx.length) startAnimLoop();
     else draw();
@@ -1657,6 +1659,68 @@ function createMapController({ canvas, role, myCharacterId }) {
 
   let lastHoverPoint = null; // для пересчёта курсора при переключении режима без движения мыши
 
+  // --- Наведение на фишку (только ГМ): заметки героя/NPC в плавающем окошке (public/js/notepeek.js) -----------
+  // Карта только считает, над какой клеткой курсор, и что в ней стоит; окошко и его текст — на стороне gm.js
+  // (хук setTokenHoverHandler получает { entities: [{ type, entity }], rect } или null). Клетка и поиск — как у handleTap
+  // (герои по position, NPC — активной локации). Хук молчит, пока включён любой инструмент карты и во время жеста.
+  let tokenHoverHandler = null;
+  let hoverCellKey = null; // 'x,y' клетки под курсором, для которой хук уже вызван (чтобы не звать его на каждый пиксель)
+  let hoverSuppressed = false; // после нажатия окошко не возвращается, пока курсор не уйдёт в другую клетку
+
+  const tokenHoverBlocked = () => role !== 'gm' || !tokenHoverHandler || fogEdit || imageEditActive() || drawMode
+    || !!vfxPlaceMode || rulerMode || lastPointerType !== 'mouse';
+
+  // Экранный (client) прямоугольник клетки — окошко ставится рядом с ней.
+  function cellClientRect(cx, cy) {
+    const cs = currentState.map.cellSize;
+    const r = canvas.getBoundingClientRect();
+    const kx = r.width / canvas.width;
+    const ky = r.height / canvas.height;
+    const left = r.left + (canvas.width / 2 + (cx * cs - camera.x) * camera.zoom) * kx;
+    const top = r.top + (canvas.height / 2 + (cy * cs + 20 - camera.y) * camera.zoom) * ky;
+    return { left, top, right: left + cs * camera.zoom * kx, bottom: top + cs * camera.zoom * ky };
+  }
+
+  function emitTokenHover() {
+    if (!tokenHoverHandler || hoverSuppressed) return;
+    if (hoverCellKey === null || !currentState || !currentState.map || tokenHoverBlocked()) { tokenHoverHandler(null); return; }
+    const [cx, cy] = hoverCellKey.split(',').map(Number);
+    const at = (p) => !!p && p.x === cx && p.y === cy;
+    const entities = [];
+    (currentState.characters || []).forEach((entity) => { if (at(entity.position)) entities.push({ type: 'character', entity }); });
+    (currentState.npcs || []).forEach((entity) => {
+      if (entity.locationId === currentState.activeLocationId && at(entity.position)) entities.push({ type: 'npc', entity });
+    });
+    tokenHoverHandler(entities.length ? { entities, rect: cellClientRect(cx, cy) } : null);
+  }
+
+  // Курсор сдвинулся: пересчёт только при смене клетки.
+  function updateTokenHover(sx, sy) {
+    if (tokenHoverBlocked()) { clearTokenHover(); return; }
+    const cell = cellFromCanvasPoint(sx, sy);
+    const key = cell ? `${cell.x},${cell.y}` : null;
+    if (key === hoverCellKey) return;
+    hoverCellKey = key;
+    hoverSuppressed = false;
+    emitTokenHover();
+  }
+
+  // Курсор ушёл с карты / началось колесо (камера уехала из-под курсора) — гасим и забываем клетку.
+  function clearTokenHover() {
+    hoverSuppressed = false;
+    if (hoverCellKey === null) return;
+    hoverCellKey = null;
+    if (tokenHoverHandler) tokenHoverHandler(null);
+  }
+
+  // Нажатие (выбор фишки, жест): окошко гасим, но клетку помним — пока курсор не уйдёт в другую, оно не вернётся
+  // (в том числе от рассылки state).
+  function suppressTokenHover() {
+    if (hoverCellKey === null || !tokenHoverHandler) return;
+    hoverSuppressed = true;
+    tokenHoverHandler(null);
+  }
+
   canvas.addEventListener('mousemove', (e) => {
     if (activePointers.size > 0) return; // активный жест сам управляет курсором (см. pointerdown/endPointer)
     setFogShift(e.shiftKey);
@@ -1664,11 +1728,13 @@ function createMapController({ canvas, role, myCharacterId }) {
     lastHoverPoint = pt;
     canvas.style.cursor = cursorForHover(pt.x, pt.y);
     setFogHoverPoint(pt);
+    updateTokenHover(pt.x, pt.y);
   });
 
   canvas.addEventListener('mouseleave', () => {
     if (activePointers.size > 0) return; // жест с захватом указателя продолжается и за краем карты
     setFogHoverPoint(null);
+    clearTokenHover();
   });
 
   // --- Клавиши и колесо инструментов «Туман» (только ГМ) и «Рисунок» (обе роли) ----------------------------
@@ -1792,6 +1858,7 @@ function createMapController({ canvas, role, myCharacterId }) {
     canvas.setPointerCapture(e.pointerId);
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     lastPointerType = e.pointerType || 'mouse'; // от него зависит зона попадания по ручкам картинки
+    suppressTokenHover();
     if (activePointers.size === 1) {
       const isMouse = e.pointerType === 'mouse';
       // ГМ рисует туман: тач/перо или ЛКМ перехватывают жест под кисть/зону.
@@ -2151,6 +2218,7 @@ function createMapController({ canvas, role, myCharacterId }) {
 
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
+    clearTokenHover(); // камера уедет из-под курсора — окошко с заметками устарело
     if ((e.ctrlKey || e.metaKey) && toolWheel(e)) return;
     const pt = eventToCanvasPoint(e);
     const before = screenToWorld(pt.x, pt.y);
@@ -2676,6 +2744,8 @@ function createMapController({ canvas, role, myCharacterId }) {
     // погоду под каждой картинкой (с учётом поворота; отражение прямоугольник не меняет).
     getView: () => ({ x: camera.x, y: camera.y, zoom: camera.zoom, w: canvas.width, h: canvas.height }),
     getImageQuads: () => ((currentState && currentState.mapImages) || []).map(mapImageCorners),
+    // Наведение на фишку (только ГМ, gm.js): fn({ entities: [{ type, entity }], rect }) или fn(null) — показать/погасить заметки.
+    setTokenHoverHandler: (fn) => { tokenHoverHandler = fn; },
     setMapImageSelectHandler: (fn) => { mapImageSelectHandler = fn; },
     setMapImageUpdateHandler: (fn) => { mapImageUpdateHandler = fn; },
     // Выбор картинки программно (из панели, после дубликата): панель узнаёт о нём тем же колбэком, что и о клике по карте.

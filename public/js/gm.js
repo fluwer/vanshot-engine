@@ -105,6 +105,15 @@ mapController.setDrawAddHandler((stroke) => socket.emit('drawing:add', stroke));
 mapController.setDrawEraseHandler((id) => socket.emit('drawing:erase', { id }));
 mapController.setDrawUndoHandler(() => socket.emit('drawing:undo')); // ПКМ в режиме рисования
 
+// ---- Заметки при наведении на фишку (только ГМ) ----
+// map.js сообщает, какие герои/NPC стоят в клетке под курсором; текст и окошко — public/js/notepeek.js.
+// У карточек справа то же окошко включает директива v-note-peek (src/gm-panel/notePeek.js).
+mapController.setTokenHoverHandler((hover) => {
+  const blocks = hover ? hover.entities.flatMap(({ type, entity }) => NotePeek.blocksFor(type, entity)) : [];
+  if (blocks.length) NotePeek.show(blocks, hover.rect, { owner: 'map' });
+  else NotePeek.hide('map');
+});
+
 // ---- Спецэффекты (дым/огонь/фейерверк) — доступны и ГМ, и игрокам ----
 mapController.setVfxPlaceHandler((type, x, y) => socket.emit('vfx:trigger', { type, x, y }));
 socket.on('vfx:play', ({ type, x, y, hits }) => mapController.playEffect(type, x, y, hits));

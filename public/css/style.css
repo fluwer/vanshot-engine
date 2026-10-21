@@ -581,6 +581,28 @@ select.fog-btn { padding: 4px 28px 4px 8px; }
 }
 .tip.tip-visible { visibility: visible; opacity: 1; }
 
+/* ---- Заметки ГМа при наведении на героя/NPC (public/js/notepeek.js, только gm.html) ----
+   Окно в body (position: fixed): zoom интерфейса на него не действует — размеры через calc(… * var(--ui-scale)), как у .tip.
+   z-index 45: выше левой/правой панелей, ниже модалок (50) и обычных подсказок (70). */
+.note-peek {
+  position: fixed; left: 0; top: 0; z-index: 45;
+  width: max-content; max-width: calc(340px * var(--ui-scale)); max-height: min(60vh, calc(480px * var(--ui-scale)));
+  overflow: hidden; padding: calc(9px * var(--ui-scale)) calc(12px * var(--ui-scale));
+  border-radius: var(--r-md); font-size: calc(12.5px * var(--ui-scale)); line-height: 1.45; color: var(--text-2);
+  background: var(--surface-pop); border: 1px solid var(--accent-line); box-shadow: var(--shadow-2);
+  pointer-events: none; visibility: hidden; opacity: 0; transition: opacity 90ms ease;
+}
+.note-peek.note-peek-visible { visibility: visible; opacity: 1; }
+/* Заметки длиннее окошка обрезаны — снизу затухание. */
+.note-peek.note-peek-clipped { mask-image: linear-gradient(to bottom, #000 calc(100% - 32px), transparent); -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 32px), transparent); }
+.note-peek-block + .note-peek-block { margin-top: calc(9px * var(--ui-scale)); padding-top: calc(9px * var(--ui-scale)); border-top: 1px solid var(--line); }
+.note-peek-title { font-weight: 600; color: var(--text); font-stretch: var(--stretch-cond); }
+.note-peek-label {
+  margin-top: calc(6px * var(--ui-scale)); font-size: 0.82em; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--accent); font-stretch: var(--stretch-cond);
+}
+.note-peek-text { color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+
 /* ---- Игроки предлагают картинки (src/gm-panel/ImageProposals.vue) ----
    Плавающая НЕ блокирующая карточка поверх панелей ГМ, ниже модалок. */
 .proposals-card {

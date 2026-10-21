@@ -4,6 +4,7 @@ import StatRow from './StatRow.vue';
 import InventoryEditor from './InventoryEditor.vue';
 import Icon from './Icon.vue';
 import { useGame } from './useGame';
+import { vNotePeek } from './notePeek.js';
 
 // Короткие подписи ресурсов — из настроек игры.
 const { res } = useGame();
@@ -39,7 +40,7 @@ function handleCardClick(e) {
 </script>
 
 <template>
-  <div class="card compact char-mini" :class="{ selected }" @click="handleCardClick">
+  <div class="card compact char-mini" :class="{ selected }" v-note-peek="{ type: 'character', entity: character, notes: character.notes }" @click="handleCardClick">
     <div class="row" style="gap:6px">
       <img v-if="character.avatar" class="gm-avatar" :src="character.avatar" alt="">
       <span v-else class="gm-avatar gm-avatar-fallback" :style="{ background: character.color || '#888' }">{{ character.name[0] }}</span>

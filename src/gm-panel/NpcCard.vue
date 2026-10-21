@@ -4,6 +4,7 @@ import StatRow from './StatRow.vue';
 import InventoryEditor from './InventoryEditor.vue';
 import Icon from './Icon.vue';
 import { useGame } from './useGame';
+import { vNotePeek } from './notePeek.js';
 
 const props = defineProps({
   npc: { type: Object, required: true },
@@ -49,7 +50,7 @@ function handleCardClick(e) {
 </script>
 
 <template>
-  <div class="card compact npc-mini" :class="{ selected }" @click="handleCardClick">
+  <div class="card compact npc-mini" :class="{ selected }" v-note-peek="{ type: 'npc', entity: npc, notes: npc.notes, secret: npc.secret, role: npc.role }" @click="handleCardClick">
     <div class="row" style="gap:6px">
       <img v-if="npc.avatar" class="gm-avatar" :src="npc.avatar" alt="">
       <span v-else class="gm-avatar gm-avatar-fallback" :style="{ background: avatarColor }">{{ npc.name[0] }}</span>
