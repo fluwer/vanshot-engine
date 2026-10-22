@@ -411,14 +411,66 @@ select.fog-btn { padding: 4px 28px 4px 8px; }
 
 /* ---- Строка «Текущая локация» (ГМ и игрок): в .hud-top, клики пропускает; у ГМ
    кликабельна (открывает пункт «Локации») ---- */
+/* Вывеска: табличка с «морозной» рамкой (скошенные уголки), значок-метка в кружке, подпись «Локация» и название.
+   Рамка — внешний слой цвета линии, внутренний слой вырезан на 1 px меньше с тем же скосом (border не вырезается
+   clip-path'ом по диагонали); тень — filter на корне монтирования (на самом элементе её срезал бы clip-path).
+   При смене названия (key в шаблоне) играют короткие вспышка и появление текста. */
+.hud-top #location-badge-vue-root { max-width: 100%; min-width: 0; filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.42)); }
 .location-badge {
-  pointer-events: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  padding: 4px 12px; border-radius: var(--r-md); font-size: 13px; color: var(--text);
-  background: var(--surface-0); border: 1px solid var(--line); box-shadow: var(--shadow-1);
+  pointer-events: none; max-width: 100%; padding: 1px; box-sizing: border-box;
+  background: var(--accent-line);
+  clip-path: polygon(8px 0, calc(100% - 8px) 0, 100% 8px, 100% calc(100% - 8px), calc(100% - 8px) 100%, 8px 100%, 0 calc(100% - 8px), 0 8px);
+  transition: background 0.15s ease;
 }
-.location-badge .ico { color: var(--accent); margin-right: 4px; vertical-align: -0.22em; }
+.location-badge-body {
+  position: relative; overflow: hidden; display: flex; align-items: center; gap: 10px;
+  padding: 6px 18px 7px 10px; min-width: 0;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 11%, var(--surface-0)), var(--surface-0) 70%);
+  clip-path: polygon(7.4px 0, calc(100% - 7.4px) 0, 100% 7.4px, 100% calc(100% - 7.4px), calc(100% - 7.4px) 100%, 7.4px 100%, 0 calc(100% - 7.4px), 0 7.4px);
+  box-shadow: var(--inset-top);
+}
+/* светящаяся верхняя грань */
+.location-badge-body::before {
+  content: ''; position: absolute; top: 0; left: 12px; right: 12px; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+}
+.location-badge-body::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 14px; pointer-events: none;
+  background: radial-gradient(60% 100% at 50% 0%, color-mix(in srgb, var(--accent) 22%, transparent), transparent);
+}
+.location-badge-icon {
+  position: relative; z-index: 1; flex: 0 0 auto; display: grid; place-items: center; width: 26px; height: 26px;
+  border-radius: 50%; color: var(--accent); background: var(--accent-bg); border: 1px solid var(--accent-line);
+}
+.location-badge-icon .ico { width: 15px; height: 15px; margin: 0; vertical-align: baseline; }
+.location-badge-text { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.location-badge-label {
+  font-size: 10px; line-height: 1; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--accent); font-stretch: var(--stretch-cond);
+}
+.location-badge-name {
+  display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 15px; line-height: 1.2; font-weight: 600; letter-spacing: 0.01em; color: var(--text);
+  animation: location-name-in 0.6s ease-out both;
+}
+/* вспышка-блик по табличке при смене локации */
+.location-badge-shine {
+  position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  background: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--accent) 38%, transparent) 50%, transparent 70%);
+  transform: translateX(-120%); animation: location-shine 0.8s ease-out both;
+}
+@keyframes location-name-in {
+  from { opacity: 0; transform: translateY(3px); text-shadow: 0 0 14px var(--accent); }
+  to { opacity: 1; transform: none; text-shadow: 0 0 0 transparent; }
+}
+@keyframes location-shine { from { transform: translateX(-120%); } to { transform: translateX(120%); } }
+@media (prefers-reduced-motion: reduce) {
+  .location-badge-name { animation: none; }
+  .location-badge-shine { display: none; }
+}
 .location-badge.clickable { pointer-events: auto; cursor: pointer; }
-.location-badge.clickable:hover { border-color: var(--accent-line); }
+.location-badge.clickable:hover { background: var(--accent); }
+.location-badge.clickable:hover .location-badge-body { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 18%, var(--surface-0)), var(--surface-0) 75%); }
 
 /* ---- Вкладки внутри блоков (Участники, Карта, Звук, Журнал) ---- */
 .panel-tabs { display: flex; gap: 4px; padding: 0 8px 5px; flex-shrink: 0; }
@@ -602,6 +654,29 @@ select.fog-btn { padding: 4px 28px 4px 8px; }
   color: var(--accent); font-stretch: var(--stretch-cond);
 }
 .note-peek-text { color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* ---- Блок «ресурсы»: FPS и прочее (public/js/perfhud.js) ----
+   Справа внизу, слева от колонки ГМа (--side-w) и над кнопкой журнала и нижней панелью. z-index 6 — ниже блоков панели (7),
+   поэтому открытый журнал его закрывает. Лежит в .map-stage вне zoom-контейнеров: размеры — через calc() с --ui-scale.
+   Клики пропускает; выключается в «Вид» (атрибут hidden). */
+.perf-hud {
+  position: absolute; z-index: 6; pointer-events: none;
+  right: calc(var(--side-w) * var(--ui-scale) + 12px * var(--ui-scale)); bottom: calc(76px * var(--ui-scale));
+  min-width: calc(214px * var(--ui-scale)); max-width: calc(320px * var(--ui-scale));
+  display: flex; flex-direction: column; gap: calc(1px * var(--ui-scale));
+  padding: calc(6px * var(--ui-scale)) calc(10px * var(--ui-scale));
+  font-size: calc(11px * var(--ui-scale)); line-height: 1.35; font-variant-numeric: tabular-nums; color: var(--text-2);
+  background: color-mix(in srgb, var(--surface-0) 86%, transparent); border: 1px solid var(--line); border-radius: var(--r-md);
+  box-shadow: var(--shadow-1);
+}
+.perf-hud[hidden] { display: none; }
+.perf-row { display: flex; justify-content: space-between; gap: calc(12px * var(--ui-scale)); }
+.perf-k { color: var(--text-dim); font-stretch: var(--stretch-cond); }
+.perf-v { color: var(--text); text-align: right; }
+.perf-sub { text-align: right; color: var(--text-dim); font-size: 0.92em; }
+.perf-good { color: var(--ok); }
+.perf-warn { color: var(--amber); }
+.perf-bad { color: var(--danger); }
 
 /* ---- Игроки предлагают картинки (src/gm-panel/ImageProposals.vue) ----
    Плавающая НЕ блокирующая карточка поверх панелей ГМ, ниже модалок. */

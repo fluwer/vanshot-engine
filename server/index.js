@@ -804,6 +804,11 @@ io.on('connection', (socket) => {
     broadcastState();
   });
 
+  // Круг до сервера для блока «ресурсы» (public/js/perfhud.js, «Пинг»): сразу отвечаем пустым ack, ничего не читаем и не меняем.
+  socket.on('net:ping', (payload, ack) => {
+    if (typeof ack === 'function') ack();
+  });
+
   // Режим «что делать, когда трек доиграл» (повтор / по списку / случайно) — общий для всех.
   socket.on('music:mode', ({ mode }) => {
     if (socket.data.role !== 'gm') return;

@@ -20,5 +20,14 @@ function onClick() {
     :class="{ clickable }"
     :title="clickable ? `Текущая локация: ${store.name} — открыть список локаций` : `Текущая локация: ${store.name}`"
     @click="onClick"
-  ><Icon name="map-pin" /> {{ store.name }}</div>
+  >
+    <div class="location-badge-body">
+      <span :key="`shine-${store.name}`" class="location-badge-shine" aria-hidden="true"></span>
+      <span class="location-badge-icon"><Icon name="map-pin" /></span>
+      <span class="location-badge-text">
+        <span class="location-badge-label">Локация</span>
+        <span :key="store.name" class="location-badge-name">{{ store.name }}</span>
+      </span>
+    </div>
+  </div>
 </template>

@@ -18,6 +18,9 @@ const app = document.getElementById('app');
 
 let myCharacterId = null;
 let mapController = null;
+// Блок «ресурсы» (FPS и прочее, public/js/perfhud.js): включён по умолчанию, выключается в пункте «Вид».
+// Карта у игрока появляется только после входа — блок берёт её по месту, а до входа лежит в скрытом #app.
+window.PerfHud.init({ socket, getMap: () => mapController });
 // Туман приходит отдельным событием fog:update и может долететь раньше,
 // чем создастся mapController (join ещё не завершился) — буферизуем
 // последний blob и применяем его сразу после создания mapController.

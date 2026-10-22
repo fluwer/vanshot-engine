@@ -177,6 +177,9 @@ function requestReachable() {
 // Окно показа роликов (public/js/videofx.js): у ГМ в рамке есть значок «стоп».
 window.videoFx.init({ gm: true, onStop: () => socket.emit('video:stop') });
 
+// Блок «ресурсы» (FPS и прочее, public/js/perfhud.js): включён по умолчанию, выключается в пункте «Вид».
+window.PerfHud.init({ socket, getMap: () => mapController, gm: true });
+
 socket.on('state', (state) => {
   window.Game.update(state.game); // настройки игры (название, тема, подписи) — раньше всех, остальное их читает
   window.videoFx.onState(state.video); // идущий ролик: окно с рамкой, как у игроков
