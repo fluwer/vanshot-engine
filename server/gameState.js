@@ -32,6 +32,7 @@ const AUDIO_UPLOAD_DIRS = {
   sounds: path.join(UPLOADS_ROOT, 'sounds'),                       // /assets/sounds/…
 };
 const SFX_DIR = path.join(UPLOADS_ROOT, 'sfx');                    // /assets/sfx/… — свои звуки интерфейса (game.json → sfx)
+const LOGIN_IMAGE_DIR = path.join(UPLOADS_ROOT, 'login');          // /assets/login/… — картинка окна входа игрока (game.json → loginImage)
 const SKILLS_FILE = path.join(DATA_DIR, 'skills.json');            // каталог навыков (правит ГМ: экран «Игра»)
 
 // Раньше загруженные аватары и картинки карты писались прямо в public/avatars/{uploads,map-images}.
@@ -442,6 +443,15 @@ function regenerateCharacterCode(characterId) {
   c.code = newCode;
   saveCharacterCodes();
   return newCode;
+}
+
+// Отображаемое имя игрока из формы входа: только строка, без управляющих символов, trim, не длиннее
+// PLAYER_NAME_MAX_LENGTH символов (по символам, а не по кодовым единицам — суррогатные пары не режутся).
+// Форма ограничивает ввод сама, но сервер не верит клиенту: имя попадает в чат, журнал бросков и «занят: …».
+// Нестрока и пустое имя дают '' (вызывающий подставляет «Игрок» для вошедшего игрока).
+function cleanPlayerName(name) {
+  if (typeof name !== 'string') return '';
+  return Array.from(name.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim()).slice(0, config.PLAYER_NAME_MAX_LENGTH).join('').trim();
 }
 
 function claimCharacter(characterId, playerName, socketId) {
@@ -858,6 +868,57 @@ function resetSfx(kind) {
   const prev = gameConfig.get().sfx[kind];
   const result = gameConfig.update({ sfx: { [kind]: null } });
   if (result.ok && prev) removeSfxFile(prev.url);
+  return result.ok ? { ok: true } : result;
+}
+
+// ---- Картинка окна входа игрока (экран «Игра» → «Оформление») ------------------------------------------
+// Файл — в data/uploads/login, адрес /assets/login/<имя> записывается в настройки игры (loginImage); старый
+// файл при замене и сбросе удаляется. Формат проверяется и по data-URL, и по первым байтам файла.
+function removeLoginImageFile(url) {
+  if (typeof url !== 'string' || !url.startsWith('/assets/login/')) return;
+  fs.unlink(path.join(LOGIN_IMAGE_DIR, path.basename(url)), (err) => {
+    if (err && err.code !== 'ENOENT') console.warn('Не удалось удалить картинку окна входа:', err.message);
+  });
+}
+
+function imageMagicMatches(ext, buf) {
+  if (ext === 'png') return buf.length > 8 && buf.readUInt32BE(0) === 0x89504e47;
+  if (ext === 'jpg') return buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+  if (ext === 'gif') return buf.length > 6 && buf.toString('latin1', 0, 4) === 'GIF8';
+  if (ext === 'webp') return buf.length > 12 && buf.toString('latin1', 0, 4) === 'RIFF' && buf.toString('latin1', 8, 12) === 'WEBP';
+  return false;
+}
+
+function saveLoginImage(dataUrl) {
+  const match = typeof dataUrl === 'string' ? /^data:image\/(png|jpeg|jpg|webp|gif);base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl) : null;
+  if (!match) return { ok: false, reason: 'bad-format' };
+  const ext = match[1] === 'jpeg' ? 'jpg' : match[1];
+  const buffer = Buffer.from(match[2], 'base64');
+  if (!buffer.length || buffer.length > config.LOGIN_IMAGE_MAX_SIZE) return { ok: false, reason: 'too-large' };
+  if (!imageMagicMatches(ext, buffer)) return { ok: false, reason: 'bad-format' };
+  const fileName = `login-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 4)}.${ext}`;
+  const prev = gameConfig.get().loginImage;
+  try {
+    fs.mkdirSync(LOGIN_IMAGE_DIR, { recursive: true });
+    fs.writeFileSync(path.join(LOGIN_IMAGE_DIR, fileName), buffer);
+  } catch (err) {
+    console.warn('Не удалось сохранить картинку окна входа:', err.message);
+    return { ok: false, reason: 'save-failed' };
+  }
+  const url = `/assets/login/${fileName}`;
+  const result = gameConfig.update({ loginImage: { url } });
+  if (!result.ok) {
+    fs.unlink(path.join(LOGIN_IMAGE_DIR, fileName), () => {});
+    return result;
+  }
+  if (prev) removeLoginImageFile(prev.url);
+  return { ok: true, url };
+}
+
+function resetLoginImage() {
+  const prev = gameConfig.get().loginImage;
+  const result = gameConfig.update({ loginImage: null });
+  if (result.ok && prev) removeLoginImageFile(prev.url);
   return result.ok ? { ok: true } : result;
 }
 
@@ -2484,6 +2545,10 @@ module.exports = {
   stopMusicIfTrackGone,
   saveSfx,
   resetSfx,
+  saveLoginImage,
+  resetLoginImage,
+  removeLoginImageFile,
+  cleanPlayerName,
   saveSkill,
   removeSkill,
   playVideo,
@@ -2499,6 +2564,7 @@ module.exports = {
     music: AUDIO_UPLOAD_DIRS.music,
     sounds: AUDIO_UPLOAD_DIRS.sounds,
     sfx: SFX_DIR,
+    login: LOGIN_IMAGE_DIR,
   },
   publicCombatOrder,
   setNpcDead,

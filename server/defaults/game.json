@@ -5,6 +5,7 @@
   "hiddenName": "Неизвестный",
   "theme": { "accent": null, "bg": null, "text": null, "amber": null },
   "sfx": { "diceRoll": null, "combatStart": null, "sceneEnter": null },
+  "loginImage": null,
   "attributes": {
     "body": { "label": "Тело", "icon": "biceps-flexed" },
     "mind": { "label": "Разум", "icon": "brain" },

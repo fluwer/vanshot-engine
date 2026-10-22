@@ -28,6 +28,8 @@ const store = reactive({
   skillsCatalog: {},
   selected: null,
   locations: [],
+  // Открытая локация: вкладка «NPC» умеет показывать только её NPC (фильтр «Эта локация»).
+  activeLocationId: null,
 });
 
 const app = createApp(CharactersPanel, { store, bridge });
@@ -37,11 +39,12 @@ app.mount('#characters-panel-vue-root');
 // renderCharacters/renderNpcs при каждом socket 'state' и при смене
 // выделения на карте.
 window.charactersPanelApp = {
-  updateState(characters, npcs, skillsCatalog, locations) {
+  updateState(characters, npcs, skillsCatalog, locations, activeLocationId) {
     store.characters = characters;
     store.npcs = npcs;
     if (skillsCatalog) store.skillsCatalog = skillsCatalog;
     store.locations = locations || [];
+    store.activeLocationId = activeLocationId ?? null;
   },
   setSelected(target) {
     store.selected = target;

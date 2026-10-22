@@ -264,6 +264,7 @@ volume-x
 # --- интерфейс (экран «Игра» и прочее)
 minus
 settings
+gear
 sliders-horizontal
 palette
 paintbrush

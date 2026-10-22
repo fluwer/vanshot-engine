@@ -24,6 +24,7 @@ const THEME_KEYS = ['accent', 'bg', 'text', 'amber'];
 
 const HEX_RE = /^#[0-9a-f]{6}$/i;
 const SFX_URL_RE = /^\/assets\/sfx\/[\w.-]{1,100}\.(mp3|ogg|wav)$/i;
+const LOGIN_IMAGE_URL_RE = /^\/assets\/login\/[\w.-]{1,100}\.(png|jpg|webp|gif)$/i;
 const CONTROL_RE = /[\u0000-\u001f\u007f]/;
 
 class Invalid extends Error {
@@ -117,6 +118,15 @@ const SECTIONS = {
     if (o.volume === undefined) o.volume = 1;
     return o;
   }),
+  // Картинка окна входа игрока: null (нет — окно одноколоночное) или { url } — файл в data/uploads/login.
+  loginImage: (v, w) => {
+    if (v === null) return null;
+    const o = fields(v, w, {
+      url: (u, p) => { if (typeof u !== 'string' || !LOGIN_IMAGE_URL_RE.test(u)) throw new Invalid(p); return u; },
+    });
+    if (!o.url) throw new Invalid(`${w}.url`);
+    return o;
+  },
   attributes: (v, w) => keyed(v, ATTR_IDS, w, (a, p) => fields(a, p, {
     label: (x, pp) => text(x, config.GAME_LABEL_MAX_LENGTH, pp),
     icon,
@@ -298,4 +308,5 @@ module.exports = {
   FACTION_IDS,
   SFX_KINDS,
   SFX_URL_RE,
+  LOGIN_IMAGE_URL_RE,
 };

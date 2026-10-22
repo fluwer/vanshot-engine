@@ -70,6 +70,7 @@ app.use('/avatars/map-images', express.static(store.mapImages));
 app.use('/assets/music', express.static(store.music));
 app.use('/assets/sounds', express.static(store.sounds));
 app.use('/assets/sfx', express.static(store.sfx)); // свои звуки интерфейса (экран «Игра»); стандартные — из public/assets/sfx
+app.use('/assets/login', express.static(store.login)); // картинка окна входа игрока (экран «Игра → Оформление»)
 // Ролики (панель «Ролики»): static понимает Range — клиент начинает с нужной секунды, не качая файл целиком.
 // dotfiles: 'ignore' обязателен: по умолчанию прячется только файл с точкой в ПОСЛЕДНЕМ сегменте пути, а
 // недокачанные загрузки лежат в .tmp/<id> (точка в каталоге) — без опции они отдавались бы наружу.
@@ -152,7 +153,12 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('join', ({ role, name, characterId, code }, ack) => {
+  socket.on('join', (payload, ack) => {
+    const { role, characterId, code } = payload || {};
+    // Имя не доверяем клиенту (в форме есть maxlength, но событие можно послать и без неё): строка, без
+    // управляющих символов, не длиннее PLAYER_NAME_MAX_LENGTH. Вошедший игрок без имени — «Игрок».
+    let name = gameState.cleanPlayerName((payload || {}).name);
+    if (!name && role === 'player') name = 'Игрок';
     // Код доступа защищает от входа под чужим персонажем — проверяем
     // до того, как что-либо менять в состоянии.
     if (role === 'player' && characterId) {
@@ -533,7 +539,10 @@ io.on('connection', (socket) => {
     if (socket.data.role !== 'gm') return;
     const section = payload && typeof payload.section === 'string' ? payload.section : '';
     const before = gameConfig.get().showBundled;
+    const prevLogin = gameConfig.get().loginImage;
     const result = gameConfig.reset(section);
+    // Сброс картинки окна входа (раздел или 'all') — старый файл больше не нужен.
+    if (result.ok && prevLogin && !gameConfig.get().loginImage) gameState.removeLoginImageFile(prevLogin.url);
     if (result.ok) afterGameConfigChange(before);
     if (typeof ack === 'function') ack(result.ok ? { ok: true } : { ok: false, reason: result.reason });
   });
@@ -550,6 +559,22 @@ io.on('connection', (socket) => {
   socket.on('sfx:reset', (payload, ack) => {
     if (socket.data.role !== 'gm') return;
     const result = gameState.resetSfx((payload || {}).kind);
+    if (result.ok) broadcastState();
+    if (typeof ack === 'function') ack(result.ok ? { ok: true } : { ok: false, reason: result.reason });
+  });
+
+  // Картинка окна входа игрока (data/uploads/login): { dataUrl } / без данных. Только мастер; открытые окна
+  // входа обновляются сами — настройка уходит всем в state.game.
+  socket.on('loginimg:upload', (payload, ack) => {
+    if (socket.data.role !== 'gm') return;
+    const result = gameState.saveLoginImage((payload || {}).dataUrl);
+    if (result.ok) broadcastState();
+    if (typeof ack === 'function') ack(result.ok ? { ok: true, url: result.url } : { ok: false, reason: result.reason });
+  });
+
+  socket.on('loginimg:reset', (payload, ack) => {
+    if (socket.data.role !== 'gm') return;
+    const result = gameState.resetLoginImage();
     if (result.ok) broadcastState();
     if (typeof ack === 'function') ack(result.ok ? { ok: true } : { ok: false, reason: result.reason });
   });

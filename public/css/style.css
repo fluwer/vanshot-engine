@@ -109,13 +109,153 @@ h3 {
 .small { font-size: 12px; }
 .wide { width: 100%; }
 
-/* ---- Окно входа + пикер аватара ---- */
-.join-card { max-width: 460px; margin: 30px auto; }
-.form-row .form-field-narrow { flex: 0 0 110px; }
-.form-field-narrow input { text-align: center; letter-spacing: 2px; font-variant-numeric: tabular-nums; }
-.join-error { color: var(--danger); font-size: 13px; margin: -4px 0 4px; }
+/* ---- Окно входа + пикер аватара ----
+   Карточка — «морозное стекло» над снегом (.login-bg, public/js/loginfx.js): полупрозрачная поверхность с размытием,
+   по краю иней (зернистая маска) и кристаллы в углах; у каждого поля по шестерёнке слева и справа; справа от полей —
+   картинка, которую выставил ГМ (.join-art; нет картинки — колонки нет). Вся декорация живёт только внутри .join-card и
+   .login-bg, цвета — токены (color-mix), маски задают лишь форму: цвет им даёт background. */
+.join-card {
+  --frost-crystal: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' fill='none' stroke='black' stroke-linecap='round'%3E%3Cpath stroke-width='2.8' d='M2 2 50 50'/%3E%3Cpath stroke-width='2.2' d='M12 12H32M12 12V32M22 22H38M22 22V38M32 32H44M32 32V44M42 42H50M42 42V50'/%3E%3Cpath stroke-width='1.6' d='M20 12 24 17M27 12 30 16M12 20 17 24M12 27 16 30M30 22 33 26M22 30 26 33'/%3E%3Ccircle cx='32' cy='12' r='1.4' fill='black' stroke='none'/%3E%3Ccircle cx='12' cy='32' r='1.4' fill='black' stroke='none'/%3E%3Ccircle cx='38' cy='22' r='1.2' fill='black' stroke='none'/%3E%3Ccircle cx='22' cy='38' r='1.2' fill='black' stroke='none'/%3E%3C/svg%3E");
+  --frost-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 2.6 0 0 0 -1.15'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)'/%3E%3C/svg%3E");
+  position: relative; z-index: 1; max-width: 460px; margin: 0 auto 24px; padding: 30px 30px 28px; overflow: hidden;
+  background: color-mix(in srgb, var(--surface-1) 78%, transparent);
+  -webkit-backdrop-filter: blur(10px) saturate(1.15); backdrop-filter: blur(10px) saturate(1.15);
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--line));
+  box-shadow: var(--shadow-2), inset 0 1px 0 color-mix(in srgb, var(--text) 10%, transparent), inset 0 0 38px color-mix(in srgb, var(--accent) 7%, transparent);
+}
+/* иней по краю: зерно, видимое только у границ карточки */
+.join-card::before {
+  content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none; border-radius: inherit;
+  background: color-mix(in srgb, var(--text) 70%, var(--accent)); opacity: 0.55;
+  -webkit-mask-image: var(--frost-grain), radial-gradient(ellipse 78% 74% at 50% 50%, transparent 42%, black 100%);
+  mask-image: var(--frost-grain), radial-gradient(ellipse 78% 74% at 50% 50%, transparent 42%, black 100%);
+  -webkit-mask-size: 220px 220px, 100% 100%; mask-size: 220px 220px, 100% 100%;
+  -webkit-mask-repeat: repeat, no-repeat; mask-repeat: repeat, no-repeat;
+  -webkit-mask-composite: source-in; mask-composite: intersect;
+}
+/* морозная дымка в углах карточки: иней «наползает» от краёв */
+.join-card::after {
+  content: ''; position: absolute; inset: 0; z-index: 0; pointer-events: none; border-radius: inherit;
+  background:
+    radial-gradient(circle at 0 0, color-mix(in srgb, var(--text) 20%, transparent), transparent 150px),
+    radial-gradient(circle at 100% 0, color-mix(in srgb, var(--text) 16%, transparent), transparent 130px),
+    radial-gradient(circle at 0 100%, color-mix(in srgb, var(--text) 15%, transparent), transparent 130px),
+    radial-gradient(circle at 100% 100%, color-mix(in srgb, var(--text) 20%, transparent), transparent 150px);
+}
+.frost-corner {
+  position: absolute; width: 32px; height: 32px; z-index: 2; pointer-events: none;
+  background: color-mix(in srgb, var(--text) 62%, var(--accent)); opacity: 0.8;
+  -webkit-mask: var(--frost-crystal) no-repeat center / contain; mask: var(--frost-crystal) no-repeat center / contain;
+}
+.fc-tl { top: 2px; left: 2px; }
+.fc-tr { top: 2px; right: 2px; transform: scaleX(-1); }
+.fc-bl { bottom: 2px; left: 2px; transform: scaleY(-1); }
+.fc-br { bottom: 2px; right: 2px; transform: scale(-1, -1); }
+/* страница входа: отступ сверху — padding body (margin первого ребёнка схлопнулся бы с body и дал лишнюю прокрутку) */
+body:has(#join-form) { padding-top: max(24px, 7vh); }
+.join-layout { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; align-items: stretch; }
+.join-card:has(.join-art) { max-width: 900px; }
+.join-card:has(.join-art) .join-layout { grid-template-columns: minmax(0, 1fr) 340px; }
+.join-main { min-width: 0; }
+.join-title {
+  display: flex; align-items: center; gap: 10px; margin: 0 0 16px; padding-bottom: 12px; font-size: 19px;
+  font-stretch: var(--stretch-cond); letter-spacing: 0.01em;
+  border-bottom: 1px solid transparent; border-image: linear-gradient(90deg, var(--accent-line), transparent) 1;
+}
+.join-title .ico { width: 22px; height: 22px; color: var(--accent); filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent) 55%, transparent)); }
+/* Поле с шестерёнками: слева крупнее, справа меньше, крутятся в разные стороны; на фокусе «прокручиваются» и загораются */
+.gear-field { display: block; margin-bottom: 12px; }
+.gear-field .form-field-label { display: block; margin-left: 36px; }
+.gear-rail { --gear: var(--text-dim); display: grid; grid-template-columns: 28px minmax(0, 1fr) 22px; align-items: center; column-gap: 8px; }
+.gear-wrap { display: flex; align-items: center; justify-content: center; color: var(--gear); transition: transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1), color 0.25s ease; }
+.gear-rail .gear { width: 100%; height: auto; aspect-ratio: 1; stroke-width: 1.5; animation: gear-turn 16s linear infinite; }
+.gear-rail .gear-r { animation-duration: 11s; animation-direction: reverse; }
+.gear-rail:focus-within { --gear: var(--accent); }
+.gear-rail:focus-within .gear-wrap-l { transform: rotate(240deg); }
+.gear-rail:focus-within .gear-wrap-r { transform: rotate(-240deg); }
+.gear-rail.has-error { --gear: var(--danger); }
+@keyframes gear-turn { to { transform: rotate(360deg); } }
+.gear-input { position: relative; min-width: 0; }
+.gear-input::before {
+  content: ''; position: absolute; left: 8px; right: 8px; top: 0; height: 1px; z-index: 1; pointer-events: none;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--text) 42%, transparent), transparent); transition: opacity 0.3s ease;
+}
+.gear-rail:focus-within .gear-input::before { background: linear-gradient(90deg, transparent, var(--accent), transparent); }
+.gear-input input, .gear-input select {
+  width: 100%; padding: 8px 10px;
+  background: color-mix(in srgb, var(--field) 82%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--line-strong));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 8%, transparent), inset 0 0 16px color-mix(in srgb, var(--accent) 5%, transparent);
+  transition: border-color var(--ease), box-shadow 0.35s ease;
+}
+.gear-input input:hover, .gear-input select:hover { border-color: var(--accent-line); }
+.gear-input input:focus, .gear-input select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg), 0 0 20px color-mix(in srgb, var(--accent) 28%, transparent), inset 0 1px 0 color-mix(in srgb, var(--text) 10%, transparent);
+}
+.form-field-code input { text-align: center; letter-spacing: 6px; font-size: 15px; font-variant-numeric: tabular-nums; }
+.join-count { display: block; margin: 3px 30px 0 36px; text-align: right; font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.join-count.warn { color: var(--amber); }
+.join-error { color: var(--danger); font-size: 13px; margin: -2px 0 6px 36px; }
+.join-go {
+  position: relative; overflow: hidden; padding: 10px 14px; font-size: 14px; letter-spacing: 0.02em;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 80%, var(--text)), var(--accent) 62%);
+  box-shadow: 0 0 22px color-mix(in srgb, var(--accent) 24%, transparent), inset 0 1px 0 color-mix(in srgb, var(--text) 35%, transparent);
+}
+.join-go:hover { background: linear-gradient(180deg, color-mix(in srgb, var(--accent-strong) 80%, var(--text)), var(--accent-strong) 62%); }
+.join-go::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: -60%; width: 40%; transform: skewX(-20deg); pointer-events: none;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--text) 45%, transparent), transparent); transition: left 0.7s ease;
+}
+.join-go:hover::after { left: 130%; }
+/* Картинка справа (задаёт ГМ): заполняет рамку по центру, проявляется после загрузки, по краю морозное свечение */
+.join-art {
+  position: relative; min-height: 340px; overflow: hidden; border-radius: var(--r-lg);
+  background: var(--field); border: 1px solid var(--accent-line); box-shadow: var(--shadow-1);
+}
+.join-art img {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%;
+  opacity: 0; transform: scale(1.03); transition: opacity 0.7s ease, transform 1.2s ease;
+}
+.join-art img.ready { opacity: 1; transform: none; }
+.join-art::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(180deg, transparent 68%, color-mix(in srgb, var(--bg) 55%, transparent));
+  box-shadow: inset 0 0 30px color-mix(in srgb, var(--accent) 26%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--text) 10%, transparent);
+}
+/* Снежный фон: небо, виньетка и сугробы — CSS; снежинки и дымку рисует loginfx.js на холсте внутри */
+.login-bg {
+  position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 28%, color-mix(in srgb, var(--accent) 13%, var(--bg)), transparent 78%),
+    linear-gradient(180deg, var(--bg) 0%, var(--bg) 55%, color-mix(in srgb, var(--accent) 10%, var(--bg)) 100%);
+}
+.login-bg::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 45%, transparent 55%, color-mix(in srgb, var(--accent) 14%, transparent) 100%); }
+.login-bg canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.login-bg::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 24vh;
+  background:
+    radial-gradient(ellipse 55% 100% at 18% 100%, color-mix(in srgb, var(--text) 16%, transparent), transparent 72%),
+    radial-gradient(ellipse 45% 85% at 62% 100%, color-mix(in srgb, var(--text) 12%, transparent), transparent 72%),
+    radial-gradient(ellipse 40% 70% at 96% 100%, color-mix(in srgb, var(--text) 14%, transparent), transparent 72%);
+}
+@media (max-width: 760px) {
+  body:has(#join-form) { padding-top: 16px; }
+  .join-card { padding: 22px 16px 18px; }
+  .frost-corner { width: 22px; height: 22px; }
+  .join-card:has(.join-art) { max-width: 460px; }
+  .join-card:has(.join-art) .join-layout { grid-template-columns: minmax(0, 1fr); }
+  .join-art { order: -1; min-height: 0; height: 150px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gear-rail .gear { animation: none; }
+  .gear-wrap { transition: color 0.25s ease; }
+  .gear-rail:focus-within .gear-wrap-l, .gear-rail:focus-within .gear-wrap-r { transform: none; }
+  .join-art img, .join-go::after { transition: none; }
+}
 .avatar-picker {
-  border: 1px solid var(--line);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line));
+  background: color-mix(in srgb, var(--field) 50%, transparent);
   border-radius: var(--r-lg);
   padding: 10px;
   margin: 10px 0;
@@ -357,6 +497,20 @@ select.fog-btn { padding: 4px 28px 4px 8px; }
 .fog-toggle { width: 100%; }
 .fog-hint { margin: 0; line-height: 1.3; }
 .npc-faction-btn { flex: 0 0 auto; min-width: 34px; text-align: center; }
+
+/* ---- Фильтры вкладки «NPC» (CharactersPanel.vue): липкая панель над списком — при долгой прокрутке остаётся на виду ---- */
+/* top: -5px — компенсирует padding .overlay-body (sticky считает от края содержимого): панель прилипает вплотную к верху */
+.npc-filter {
+  position: sticky; top: -5px; z-index: 2; display: flex; flex-direction: column; gap: 4px;
+  margin: 4px -8px 6px; padding: 5px 8px 6px;
+  background: var(--surface-1); border-bottom: 1px solid var(--line);
+}
+.npc-filter-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.npc-filter-label { flex: 0 0 auto; margin-right: 2px; white-space: nowrap; }
+.npc-filter-chip { min-width: 0; padding: 4px 6px; white-space: nowrap; }
+.npc-filter-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.npc-filter-count { font-variant-numeric: tabular-nums; }
+.npc-filter-empty { margin: 8px 0; text-align: center; line-height: 1.9; }
 
 /* ---- Линейка: показания (src/gm-panel/RulerPanel.vue) ---- */
 .ruler-reading {
@@ -940,6 +1094,15 @@ select.fog-btn { padding: 4px 28px 4px 8px; }
 .game-preset-label { max-width: 100%; font-size: 11px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .game-preset-del { position: absolute; top: 2px; right: 2px; padding: 1px 3px; background: transparent; border-color: transparent; box-shadow: none; color: var(--danger); }
 .game-preset-del .ico { width: 12px; height: 12px; }
+/* Картинка окна входа (GameLookTab.vue): превью ≈ рамки в окне игрока (заполняет, по центру) + кнопки в столбец */
+.login-art-edit { display: flex; align-items: flex-end; gap: 12px; }
+.login-art-preview {
+  flex: 0 0 120px; width: 120px; aspect-ratio: 4 / 5; overflow: hidden; display: flex; align-items: center; justify-content: center;
+  background: var(--field); border: 1px solid var(--accent-line); border-radius: var(--r-md);
+}
+.login-art-preview.empty { border-style: dashed; border-color: var(--line-strong); }
+.login-art-preview img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%; }
+.login-art-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .game-skills-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .game-skill-row { flex-wrap: nowrap; padding: 3px 0; border-bottom: 1px solid var(--line); }
 .game-skill-ico { width: 16px; height: 16px; flex-shrink: 0; color: var(--text-dim); }

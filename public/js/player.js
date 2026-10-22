@@ -109,6 +109,7 @@ function onJoined({ characterId, name }) {
 
   joinForm.classList.add('hidden');
   app.classList.remove('hidden');
+  window.loginFx?.stop(); // снежный фон окна входа больше не нужен (цикл и буферы уходят)
 
   mapController = createMapController({
     canvas: document.getElementById('map-canvas'),

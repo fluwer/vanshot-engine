@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, reactive, watch } from 'vue';
 import CharacterCard from './CharacterCard.vue';
 import NpcCard from './NpcCard.vue';
 import AddEntityForm from './AddEntityForm.vue';
@@ -30,6 +30,56 @@ function toggleExpandCharacter(id) {
 function toggleExpandNpc(id) {
   expandedNpcId.value = expandedNpcId.value === id ? null : id;
 }
+
+// ---- Фильтры вкладки «NPC» ----
+// Чисто клиентские: показывают подмножество `store.npcs`, на сервер ничего не шлют и `state` не меняют.
+// «Эта локация» включена по умолчанию и запоминается вместе с остальными (localStorage ГМа); при одной локации
+// чип не показывается и не применяется. Выбранный на карте NPC всегда с открытой локации — фильтр его не прячет.
+const FILTER_KEY = 'vanshot:npcFilter';
+const VIS_MODES = [
+  { id: 'all', label: 'Все' },
+  { id: 'visible', label: 'Видимые' },
+  { id: 'hidden', label: 'Скрытые' },
+];
+const FILTER_DEFAULTS = { onlyHere: true, vis: 'all', hideDead: false };
+
+function loadFilter() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(FILTER_KEY));
+    if (raw && typeof raw === 'object') {
+      return {
+        onlyHere: raw.onlyHere !== false,
+        vis: VIS_MODES.some((m) => m.id === raw.vis) ? raw.vis : 'all',
+        hideDead: raw.hideDead === true,
+      };
+    }
+  } catch (e) { /* нет значения, битый JSON или localStorage недоступен — значения по умолчанию */ }
+  return { ...FILTER_DEFAULTS };
+}
+const filter = reactive(loadFilter());
+watch(filter, () => {
+  try { localStorage.setItem(FILTER_KEY, JSON.stringify(filter)); } catch (e) { /* приватный режим — живёт до перезагрузки */ }
+}, { deep: true });
+
+const multiLocation = computed(() => (props.store.locations || []).length > 1);
+const hereOnly = computed(() => multiLocation.value && filter.onlyHere);
+const filterActive = computed(() => hereOnly.value || filter.vis !== 'all' || filter.hideDead);
+const filteredNpcs = computed(() => props.store.npcs.filter((n) => {
+  if (hereOnly.value && n.locationId !== props.store.activeLocationId) return false;
+  if (filter.vis === 'visible' && !n.visible) return false;
+  if (filter.vis === 'hidden' && n.visible) return false;
+  if (filter.hideDead && n.dead) return false;
+  return true;
+}));
+function clearFilter() {
+  filter.onlyHere = false;
+  filter.vis = 'all';
+  filter.hideDead = false;
+}
+// Раскрытая карточка, которую фильтр спрятал, не должна «висеть» невидимо раскрытой.
+watch(filteredNpcs, (list) => {
+  if (expandedNpcId.value && !list.some((n) => n.id === expandedNpcId.value)) expandedNpcId.value = null;
+});
 
 const infoCharacter = computed(() => props.store.characters.find((c) => c.id === infoCharacterId.value) || null);
 const infoNpc = computed(() => props.store.npcs.find((n) => n.id === infoNpcId.value) || null);
@@ -95,8 +145,46 @@ function onAddNpc(data) {
     </div>
     <div class="tab-pane" :class="{ active: activeTab === 'npcs' }">
       <button class="fog-btn fog-toggle" @click="showAddNpc = true"><Icon name="plus" /> Добавить</button>
+      <div class="npc-filter" role="group" aria-label="Фильтры NPC">
+        <div class="npc-filter-row">
+          <button
+            v-if="multiLocation"
+            type="button"
+            class="fog-btn npc-filter-chip"
+            :class="{ active: filter.onlyHere }"
+            :aria-pressed="filter.onlyHere"
+            data-tip="Показывать только NPC открытой локации"
+            @click="filter.onlyHere = !filter.onlyHere"
+          ><Icon name="map-pin" /> Эта локация</button>
+          <button
+            type="button"
+            class="fog-btn npc-filter-chip"
+            :class="{ active: filter.hideDead }"
+            :aria-pressed="filter.hideDead"
+            data-tip="Убрать из списка убитых NPC"
+            @click="filter.hideDead = !filter.hideDead"
+          ><Icon name="skull" /> Без убитых</button>
+        </div>
+        <div class="npc-filter-row" role="group" aria-label="Видимость для игроков" data-tip="Видны ли NPC игрокам (флажок «Виден игрокам» на карточке)">
+          <span class="npc-filter-label muted small">Видимость:</span>
+          <button
+            v-for="m in VIS_MODES"
+            :key="m.id"
+            type="button"
+            class="fog-btn npc-filter-chip"
+            :class="{ active: filter.vis === m.id }"
+            :aria-pressed="filter.vis === m.id"
+            @click="filter.vis = m.id"
+          >{{ m.label }}</button>
+        </div>
+        <div v-if="filterActive" class="npc-filter-foot muted small">
+          <span class="npc-filter-count">Показано {{ filteredNpcs.length }} из {{ store.npcs.length }}</span>
+          <button type="button" class="small npc-filter-clear" @click="clearFilter"><Icon name="x" /> Снять все</button>
+        </div>
+      </div>
+      <p v-if="store.npcs.length && !filteredNpcs.length" class="npc-filter-empty muted small">Нет NPC по фильтру. <button type="button" class="small" @click="clearFilter">Показать всех</button></p>
       <NpcCard
-        v-for="n in store.npcs"
+        v-for="n in filteredNpcs"
         :key="n.id"
         :npc="n"
         :selected="isSelected('npc', n.id)"

@@ -8,6 +8,7 @@ const REASON_TEXT = [
   [/^invalid:hiddenName/, 'Имя скрытого NPC: от 1 до 30 символов'],
   [/^invalid:theme/, 'Цвет задан неверно'],
   [/^invalid:sfx/, 'Звук задан неверно'],
+  [/^invalid:loginImage/, 'Картинка окна входа задана неверно'],
   [/\.icon$/, 'Такой иконки нет в наборе'],
   [/\.short$/, 'Короткая подпись: от 1 до 8 символов'],
   [/^invalid:(attributes|resources|factions)/, 'Подпись: от 1 до 24 символов; цвет — в формате #rrggbb'],

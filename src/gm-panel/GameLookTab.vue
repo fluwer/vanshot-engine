@@ -3,7 +3,7 @@ import { reactive, computed, watch } from 'vue';
 import Icon from './Icon.vue';
 import { useGame } from './useGame';
 import { useDock } from './useDock.js';
-import { saveGame, resetGame } from './gameSettings';
+import { saveGame, resetGame, request, reasonText, toast } from './gameSettings';
 
 // Вкладка «Оформление»: название игры, подзаголовок (заголовок формы входа игроков) и четыре цвета
 // темы. Цвета видны сразу (предпросмотр только у ГМ, Game.previewTheme) и уходят всем после «Сохранить».
@@ -69,6 +69,37 @@ function cancel() {
   window.Game.clearPreview();
 }
 
+// ---- Картинка окна входа игроков ----
+// Меняется сразу (как звуки интерфейса), без «Сохранить»: файл уходит отдельным событием, адрес приходит
+// всем в state.game.loginImage — открытые окна входа обновляются сами.
+const loginImage = computed(() => (config.value && config.value.loginImage) || null);
+const LOGIN_REASONS = {
+  'bad-format': 'Неподходящий формат: нужна картинка PNG, JPEG, WebP или GIF',
+  'too-large': 'Картинка слишком большая: не больше 3 МБ',
+};
+const loginReason = (reason) => LOGIN_REASONS[reason] || reasonText(reason);
+
+async function uploadLoginImage(event) {
+  const file = event.target.files && event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  let dataUrl;
+  try {
+    dataUrl = await window.imageTools.loginImageFromFile(file);
+  } catch (err) {
+    toast(err.message, 'error');
+    return;
+  }
+  const result = await request(props.bridge.socket, 'loginimg:upload', { dataUrl }, 20000);
+  if (!result.ok) toast(loginReason(result.reason), 'error');
+  else toast('Картинка окна входа заменена', 'info');
+}
+
+async function removeLoginImage() {
+  const result = await request(props.bridge.socket, 'loginimg:reset', {});
+  if (!result.ok) toast(loginReason(result.reason), 'error');
+}
+
 async function toExample() {
   if (!confirm('Вернуть название, подзаголовок и цвета, как в примере игры?')) return;
   window.Game.clearPreview();
@@ -119,5 +150,21 @@ async function toExample() {
       <button :disabled="!dirty" @click="cancel">Отмена</button>
     </div>
     <button type="button" class="small game-reset" @click="toExample">Вернуть оформление как в примере</button>
+
+    <h4 class="game-heading">Картинка окна входа</h4>
+    <div class="login-art-edit">
+      <div class="login-art-preview" :class="{ empty: !loginImage }">
+        <img v-if="loginImage" :src="loginImage.url" alt="Картинка окна входа">
+        <span v-else class="muted small">Нет картинки</span>
+      </div>
+      <div class="login-art-actions">
+        <label class="upload-label upload-inline game-upload" data-tip="PNG, JPEG, WebP или GIF; сожмётся до 1280 px">
+          <Icon name="upload" /> {{ loginImage ? 'Заменить' : 'Загрузить' }}
+          <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden @change="uploadLoginImage">
+        </label>
+        <button type="button" class="small" :disabled="!loginImage" data-tip="Убрать картинку" aria-label="Убрать картинку окна входа" @click="removeLoginImage"><Icon name="trash-2" /> Убрать</button>
+      </div>
+    </div>
+    <p class="muted small game-hint">Показывается справа от полей в окне входа игроков: заполняет рамку по центру, лишнее по краям обрезается (превью — примерно как будет). Меняется сразу, без «Сохранить». Нет картинки — окно входа остаётся в одну колонку.</p>
   </div>
 </template>

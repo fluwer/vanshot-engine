@@ -7,6 +7,7 @@
   const RETRY_SIDE = 1200;                     // если результат не влез в серверный лимит
   const RAW_FILE_LIMIT = 25 * 1024 * 1024;     // сырой файл больше — не декодируем (защита от зависания)
   const SERVER_LIMIT_BYTES = 5 * 1024 * 1024;  // = MAP_IMAGE_UPLOAD_MAX_SIZE в server/config.js
+  const LOGIN_IMAGE_LIMIT_BYTES = 3 * 1024 * 1024; // = LOGIN_IMAGE_MAX_SIZE в server/config.js
   const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']; // SVG не берём: у него бывает размер 0×0
   const TEXT_INPUT_TYPES = new Set(['text', 'search', 'url', 'tel', 'email', 'password', 'number']);
 
@@ -47,6 +48,32 @@
     canvas.height = out;
     canvas.getContext('2d').drawImage(img, (w - side) / 2, (h - side) * 0.25, side, side, 0, 0, out, out);
     return canvas.toDataURL('image/png');
+  }
+
+  // Картинка окна входа игрока (задаёт ГМ в «Игра → Оформление»): целиком, без обрезки (рамку подгоняет CSS
+  // через object-fit), большая сторона не больше 1280 px — это окно не карта, а меньшие не растягиваем. Без прозрачности
+  // JPEG 0.88, с прозрачностью WebP; не влезло в серверный потолок (LOGIN_IMAGE_MAX_SIZE) — уменьшаем и повторяем.
+  // Возвращает dataUrl. Бросает Error с текстом для пользователя.
+  async function loginImageFromFile(file) {
+    if (!file || !ALLOWED_TYPES.includes(file.type)) throw new Error('Это не картинка (поддерживаются PNG, JPEG, WebP, GIF)');
+    if (file.size > RAW_FILE_LIMIT) throw new Error('Файл слишком большой (больше 25 МБ)');
+    const img = await loadImage(file);
+    const srcW = img.naturalWidth;
+    const srcH = img.naturalHeight;
+    if (!srcW || !srcH) throw new Error('Не удалось прочитать картинку');
+    for (const side of [1280, 960, 720]) {
+      const scale = Math.min(1, side / Math.max(srcW, srcH));
+      const w = Math.max(1, Math.round(srcW * scale));
+      const h = Math.max(1, Math.round(srcH * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      const dataUrl = hasAlpha(ctx, w, h) ? canvas.toDataURL('image/webp', 0.88) : canvas.toDataURL('image/jpeg', 0.88);
+      if (dataUrl.length * 0.75 <= LOGIN_IMAGE_LIMIT_BYTES) return dataUrl;
+    }
+    throw new Error('Картинка слишком тяжёлая даже после сжатия');
   }
 
   // Файл → { dataUrl, w, h } для отправки на сервер. Бросает Error с текстом для пользователя.
@@ -187,7 +214,7 @@
   }
 
   window.imageTools = {
-    encodeFile, avatarFromFile, clipboardImageFiles, shouldIgnorePaste, imageName, notify, ping,
+    encodeFile, avatarFromFile, loginImageFromFile, clipboardImageFiles, shouldIgnorePaste, imageName, notify, ping,
     reportImageFail, duplicateImage, removeImage,
   };
 })();

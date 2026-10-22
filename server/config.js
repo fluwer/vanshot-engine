@@ -115,6 +115,8 @@ module.exports = {
   GAME_DC_MAX: 40,
   GAME_ICON_NAME_RE: /^[a-z0-9][a-z0-9-]{0,39}$/, // id иконки из реестра public/js/icons-data.js
   SFX_UPLOAD_MAX_SIZE: 1024 * 1024, // звук интерфейса (кубик, начало боя, заставка локации)
+  LOGIN_IMAGE_MAX_SIZE: 3 * 1024 * 1024, // картинка окна входа игрока (data/uploads/login), ГМ задаёт в «Игра → Оформление»
+  PLAYER_NAME_MAX_LENGTH: 48, // отображаемое имя игрока при входе (чат, журнал бросков, «занят: …»)
   AVATAR_PRESETS_MAX: 60, // своих готовых картинок героев (data/presets), загруженных ГМ из интерфейса
   AVATAR_PRESET_LABEL_MAX_LENGTH: 40,
 

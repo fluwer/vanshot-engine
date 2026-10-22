@@ -186,7 +186,7 @@ socket.on('state', (state) => {
   window.videoPanelApp?.updateState(state.videos || [], state.video);
   window.dcControlsPanelApp?.updateState(state.currentDc);
   window.locationBadgeApp?.updateState(state.activeLocationName);
-  window.charactersPanelApp?.updateState(state.characters, state.npcs, state.skillsCatalog, state.locations);
+  window.charactersPanelApp?.updateState(state.characters, state.npcs, state.skillsCatalog, state.locations, state.activeLocationId);
   window.diceLogPanelApp?.updateState(state.diceLog);
   renderChat(state.chat);
   window.combatPanelApp?.updateState(state.combat, state.characters, state.npcs, state.activeLocationId);
