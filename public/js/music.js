@@ -44,7 +44,8 @@ function getMusicAudio() {
   if (!musicAudio) {
     musicAudio = new Audio();
     // Number(null) === 0: без проверки на null у нового посетителя (ничего ещё не сохранено) музыка стартовала бы с нуля.
-    const raw = localStorage.getItem('musicVolume');
+    let raw = null;
+    try { raw = localStorage.getItem('musicVolume'); } catch (e) { /* хранилище закрыто — громкость по умолчанию */ }
     const saved = raw === null ? NaN : Number(raw);
     musicBaseVolume = Number.isFinite(saved) ? clamp01(saved / 100) : 0.5;
     applyMusicVolume();
@@ -196,7 +197,7 @@ function initMusicPlayer(socket, opts) {
       musicBaseVolume = clamp01(v / 100);
       applyMusicVolume();
       if (volumeValueEl) volumeValueEl.textContent = String(v);
-      localStorage.setItem('musicVolume', String(v));
+      try { localStorage.setItem('musicVolume', String(v)); } catch (e) { /* приватный режим — настройка живёт до перезагрузки */ }
     });
   }
 
