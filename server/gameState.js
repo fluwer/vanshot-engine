@@ -333,6 +333,9 @@ const state = {
   // мировых px, naturalWidth/naturalHeight — реальный размер загруженного
   // файла, scale — множитель отображаемого размера.
   mapImages: (initialRuntime && initialRuntime.mapImages) || [],
+  // Текстовые заметки ГМа на карте (только для ГМ — игрокам не отдаются, см. getPublicState/getGMState):
+  // { id, locationId, x, y, text, size, color }, x/y — центр плашки в мировых px (как у mapImages).
+  mapTexts: loadMapTexts(initialRuntime && initialRuntime.mapTexts),
   // Свободные рисунки (перо/ластик) от ГМ и игроков поверх карты — см. addDrawing.
   // points — мировые px (как x/y у mapImages), не привязаны к клеткам сетки.
   drawings: (initialRuntime && initialRuntime.drawings) || [],
@@ -666,6 +669,7 @@ function removeLocation(locationId) {
   locations.splice(idx, 1);
   saveLocations();
   state.mapImages = state.mapImages.filter((m) => m.locationId !== locationId);
+  state.mapTexts = state.mapTexts.filter((t) => t.locationId !== locationId);
   state.drawings = state.drawings.filter((d) => d.locationId !== locationId);
   delete state.fog[locationId];
   characters.forEach((c) => { if (c.locationPositions) delete c.locationPositions[locationId]; });
@@ -1784,6 +1788,91 @@ function removeMusicTrack(id) {
   return { removed, wasPlaying: false };
 }
 
+// ---- Текстовые заметки ГМа на карте --------------------------------------------------------------------
+// «Заметки для самих картинок»: текст на тёмной плашке поверх картинок, видит только ГМ. Игрокам не уходят вообще:
+// их нет в getPublicState, а в getGMState лежат только заметки активной локации (как у картинок). Размер — из
+// MAP_TEXT_SIZES, цвет — ключ токена темы из MAP_TEXT_COLORS (не hex: смена темы красит заметки). Все числа и поля
+// проверяются строго; сервер не верит клиенту.
+// Помощники — function-декларации (не const): loadMapTexts зовётся при создании state, до этого места файла.
+// Чистка текста: переводы строк к \n, табы в пробел, управляющие символы (кроме \n) долой, trim. null — не строка,
+// пусто или длиннее MAP_TEXT_MAX_LENGTH (такой текст не принимается целиком, а не обрезается молча).
+function cleanMapText(raw) {
+  if (typeof raw !== 'string') return null;
+  const t = raw.replace(/\r\n?/g, '\n').replace(/\t/g, ' ').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').trim();
+  if (!t || t.length > config.MAP_TEXT_MAX_LENGTH) return null;
+  return t;
+}
+
+function clampMapTextCoord(v) {
+  return Math.max(-config.MAP_TEXT_COORD_LIMIT, Math.min(config.MAP_TEXT_COORD_LIMIT, v));
+}
+
+function isCoord(v) {
+  return typeof v === 'number' && Number.isFinite(v);
+}
+
+// Из runtime.json: берём только исправные записи (старый/повреждённый файл не должен ронять сервер).
+function loadMapTexts(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  raw.forEach((t) => {
+    if (out.length >= config.MAP_TEXTS_MAX || !t || typeof t !== 'object') return;
+    const text = cleanMapText(t.text);
+    if (typeof t.id !== 'string' || !t.id || text === null || !isCoord(t.x) || !isCoord(t.y)
+      || !findLocation(t.locationId) || !config.MAP_TEXT_SIZES.includes(t.size) || !config.MAP_TEXT_COLORS.includes(t.color)) return;
+    out.push({ id: t.id, locationId: t.locationId, x: clampMapTextCoord(t.x), y: clampMapTextCoord(t.y), text, size: t.size, color: t.color });
+  });
+  return out;
+}
+
+// data: { x, y, text?, size?, color? } — позиция по умолчанию центр «домашней области» локации (как у картинок).
+// { ok: true, entry } | { ok: false, reason }: 'invalid:data' | 'limit' | 'invalid:text' | 'invalid:size' | 'invalid:color'.
+function addMapText(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return { ok: false, reason: 'invalid:data' }; // null/строка/число — мусор, не «заметка по умолчанию»
+  const p = data;
+  if (state.mapTexts.length >= config.MAP_TEXTS_MAX) return { ok: false, reason: 'limit' };
+  const text = p.text === undefined ? config.MAP_TEXT_DEFAULT : cleanMapText(p.text);
+  if (text === null) return { ok: false, reason: 'invalid:text' };
+  const size = p.size === undefined ? 'm' : p.size;
+  if (!config.MAP_TEXT_SIZES.includes(size)) return { ok: false, reason: 'invalid:size' };
+  const color = p.color === undefined ? 'text' : p.color;
+  if (!config.MAP_TEXT_COLORS.includes(color)) return { ok: false, reason: 'invalid:color' };
+  const location = getActiveLocation();
+  const entry = {
+    id: `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
+    locationId: state.activeLocationId,
+    x: clampMapTextCoord(isCoord(p.x) ? p.x : (location.gridWidth * config.CELL_SIZE) / 2),
+    y: clampMapTextCoord(isCoord(p.y) ? p.y : (location.gridHeight * config.CELL_SIZE) / 2 + 20),
+    text,
+    size,
+    color,
+  };
+  state.mapTexts.push(entry);
+  return { ok: true, entry };
+}
+
+// patch: любые из { x, y, text, size, color }. Целиком или никак: любое присланное поле неверное — ничего не меняется.
+function updateMapText(id, patch) {
+  const t = typeof id === 'string' ? state.mapTexts.find((m) => m.id === id) : null;
+  if (!t) return { ok: false, reason: 'not-found' };
+  const p = patch && typeof patch === 'object' ? patch : {};
+  const next = {};
+  if (p.x !== undefined) { if (!isCoord(p.x)) return { ok: false, reason: 'invalid:position' }; next.x = clampMapTextCoord(p.x); }
+  if (p.y !== undefined) { if (!isCoord(p.y)) return { ok: false, reason: 'invalid:position' }; next.y = clampMapTextCoord(p.y); }
+  if (p.text !== undefined) { const text = cleanMapText(p.text); if (text === null) return { ok: false, reason: 'invalid:text' }; next.text = text; }
+  if (p.size !== undefined) { if (!config.MAP_TEXT_SIZES.includes(p.size)) return { ok: false, reason: 'invalid:size' }; next.size = p.size; }
+  if (p.color !== undefined) { if (!config.MAP_TEXT_COLORS.includes(p.color)) return { ok: false, reason: 'invalid:color' }; next.color = p.color; }
+  Object.assign(t, next);
+  return { ok: true, entry: t };
+}
+
+function removeMapText(id) {
+  const idx = typeof id === 'string' ? state.mapTexts.findIndex((m) => m.id === id) : -1;
+  if (idx === -1) return { ok: false, reason: 'not-found' };
+  state.mapTexts.splice(idx, 1);
+  return { ok: true };
+}
+
 // ---- Картинки на карте --------------------------------------------------
 // Мастер накладывает произвольные картинки (хендауты/доп. арт/собственный
 // фон карты — движок своего дефолтного фона не задаёт). Декодирование data
@@ -2346,6 +2435,7 @@ function persistRuntimeState() {
     diceLog: state.diceLog,
     combat: state.combat,
     mapImages: state.mapImages,
+    mapTexts: state.mapTexts,
     drawings: state.drawings,
     music: state.music,
     weather: state.weather,
@@ -2518,6 +2608,8 @@ function getGMState() {
     locations,
     // Библиотека роликов — только ГМ (панель «Ролики»); игрокам нужен лишь идущий ролик (video выше).
     videos: videos.list(),
+    // Текстовые заметки на карте — только ГМ (в getPublicState их нет); только активной локации, как картинки.
+    mapTexts: state.mapTexts.filter((t) => t.locationId === state.activeLocationId),
   };
 }
 
@@ -2549,6 +2641,9 @@ module.exports = {
   resetLoginImage,
   removeLoginImageFile,
   cleanPlayerName,
+  addMapText,
+  updateMapText,
+  removeMapText,
   saveSkill,
   removeSkill,
   playVideo,

@@ -15,6 +15,7 @@ import ViewPanel from '../gm-panel/ViewPanel.vue';
 import LocationBadge from '../gm-panel/LocationBadge.vue';
 import ActionRailPanel from './ActionRailPanel.vue';
 import MyImagesPanel from './MyImagesPanel.vue';
+import HeroButton from './HeroButton.vue';
 
 // player.js (обычный не-модульный скрипт) грузится раньше этого бандла и
 // успевает выставить window.playerBridge синхронно при загрузке страницы —
@@ -39,7 +40,7 @@ createApp(JoinForm, { store: charactersStore, bridge }).mount('#join-form-vue-ro
 createApp(PartyPanel, { store: charactersStore }).mount('#party-panel-vue-root');
 createApp(SheetDrawerPanel, { store: charactersStore }).mount('#sheet-drawer-vue-root');
 createApp(SkillsInventoryPanel, { store: charactersStore }).mount('#skills-drawer-vue-root');
-createApp(ActionRailPanel, { store: charactersStore, bridge }).mount('#action-rail-vue-root');
+// ActionRailPanel монтируется ниже, после combatStore: кубики урона показываются только в бою.
 
 const diceLogStore = reactive({ diceLog: [] });
 createApp(DiceLogPanel, { store: diceLogStore }).mount('#dicelog-panel-vue-root');
@@ -120,3 +121,16 @@ window.combatPanelApp = {
 };
 // Полоса «Раунд/Ход» сверху по центру — видна только в бою (общий компонент с ГМ).
 createApp(CombatStrip, { store: combatStore }).mount('#combat-strip-vue-root');
+// Нижняя панель: броски атрибутов; кубики урона в ней — только пока combatStore.combat.active.
+createApp(ActionRailPanel, { store: charactersStore, bridge, combat: combatStore }).mount('#action-rail-vue-root');
+
+// ---- Плавающая кнопка «К герою» ----
+// Видимость и направление героя считает map.js (setHeroViewHandler), её подключает player.js при входе.
+const heroButtonStore = reactive({ visible: true, angle: 0 });
+createApp(HeroButton, { store: heroButtonStore, bridge }).mount('#hero-btn-vue-root');
+window.heroButtonApp = {
+  update(view) {
+    heroButtonStore.visible = !!view.visible;
+    heroButtonStore.angle = view.angle || 0;
+  },
+};

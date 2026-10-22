@@ -147,6 +147,8 @@ function onJoined({ characterId, name }) {
     else if (action === 'remove') window.imageTools.removeImage(socket, id, `Удалить картинку «${(img && img.name) || 'Картинка'}» с карты?`);
   });
   window.imagesPanelApp?.setMyCharacterId(myCharacterId);
+  // Плавающая кнопка «К герою»: карта сообщает, видно ли героя на экране и в какую он сторону (src/player-panel/HeroButton.vue).
+  mapController.setHeroViewHandler((view) => window.heroButtonApp?.update(view));
   window.playerBridge.mapController = mapController;
   requestReachable();
   // Первый снимок пришёл до join (см. lastState выше) — кубики: помечаем
@@ -250,7 +252,7 @@ function leaveSession() {
   location.reload();
 }
 
-// Пробел телепортирует камеру к своему персонажу — игнорируем, если фокус
+// Пробел плавно возвращает камеру к своему персонажу (то же, что кнопка «К герою») — игнорируем, если фокус
 // на текстовом поле (например, в чате), чтобы не мешать вводу пробела.
 document.addEventListener('keydown', (e) => {
   if (e.code !== 'Space') return;
@@ -258,7 +260,7 @@ document.addEventListener('keydown', (e) => {
   if (tag === 'INPUT' || tag === 'TEXTAREA') return;
   if (!mapController) return;
   e.preventDefault();
-  mapController.centerOnMyCharacter();
+  mapController.flyToMyCharacter();
 });
 
 // --- Левая панель инструментов (public/js/dock.js) -------------------------

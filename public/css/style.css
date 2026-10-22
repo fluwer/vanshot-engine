@@ -520,6 +520,36 @@ select.fog-btn { padding: 4px 28px 4px 8px; }
 .ruler-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13px; }
 .ruler-row strong { color: var(--amber); font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
 
+/* ---- Текстовые заметки ГМа на карте (MapTextPanel.vue, пункт «Текст»): поле выбранной заметки, размер/цвет, список ---- */
+.maptext-edit { display: flex; flex-direction: column; gap: 6px; padding: 8px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md); }
+.maptext-edit textarea { width: 100%; resize: none; }
+.maptext-meta { display: flex; justify-content: space-between; gap: 8px; min-height: 14px; }
+.maptext-error { color: var(--danger); }
+.maptext-count { margin-left: auto; font-variant-numeric: tabular-nums; }
+.maptext-chips { display: flex; gap: 4px; }
+.maptext-color { padding: 5px 0; }
+.maptext-swatch { display: inline-block; flex: none; width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--line-strong); }
+.maptext-remove { margin-top: 2px; }
+.maptext-list { display: flex; flex-direction: column; gap: 3px; }
+.maptext-item { justify-content: flex-start; gap: 8px; width: 100%; padding: 5px 8px; font-size: 12px; text-align: left; }
+.maptext-item-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- Плавающая кнопка «К герою» (игрок, HeroButton.vue): в .hud-top под плашкой локации, видна, только пока героя нет на экране ---- */
+.hero-btn {
+  pointer-events: auto; display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 10px; font-size: 13px;
+  background: var(--surface-0); border: 1px solid var(--accent-line); border-radius: var(--r-lg); color: var(--text);
+  box-shadow: var(--shadow-1), var(--inset-top);
+}
+.hero-btn:hover { background: var(--accent-bg); border-color: var(--accent); }
+.hero-btn .ico:first-child { color: var(--accent); }
+.hero-btn-label { font-weight: 600; font-stretch: var(--stretch-cond); letter-spacing: 0.02em; }
+.hero-btn-dir { color: var(--amber); transition: transform 0.2s ease; }
+.hero-btn-enter-active, .hero-btn-leave-active { transition: opacity 0.22s ease, transform 0.22s ease; }
+.hero-btn-enter-from, .hero-btn-leave-to { opacity: 0; transform: translateY(-6px); }
+@media (prefers-reduced-motion: reduce) {
+  .hero-btn-enter-active, .hero-btn-leave-active, .hero-btn-dir { transition: none; }
+}
+
 /* ---- Панель спецэффектов: кнопки сеткой 2 в ряд (их шесть, «Фейерверк» в трёх колонках не влезает) ---- */
 .vfx-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
 

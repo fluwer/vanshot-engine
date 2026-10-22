@@ -402,6 +402,34 @@ io.on('connection', (socket) => {
     return reply({ ok: false, reason: 'forbidden' });
   });
 
+  // Текстовые заметки ГМа на карте (только мастер; игрокам не уходят — их нет в getPublicState). Проверки строгие, ответ — ack:
+  // maptext:add { x, y, text?, size?, color? } → { ok, entry }, maptext:update { id, x?, y?, text?, size?, color? } → { ok, entry },
+  // maptext:remove { id }. Не-ГМ молча игнорируется (как остальные ГМ-события). Мусор от клиента (null, нестроки) отказ, не падение.
+  const mapTextReply = (ack, result) => {
+    if (typeof ack === 'function') ack(result.ok ? { ok: true, entry: result.entry } : { ok: false, reason: result.reason });
+  };
+  socket.on('maptext:add', (payload, ack) => {
+    if (socket.data.role !== 'gm') return;
+    const result = gameState.addMapText(payload);
+    if (result.ok) broadcastState();
+    mapTextReply(ack, result);
+  });
+
+  socket.on('maptext:update', (payload, ack) => {
+    if (socket.data.role !== 'gm') return;
+    const { id, ...patch } = payload || {};
+    const result = gameState.updateMapText(id, patch);
+    if (result.ok) broadcastState();
+    mapTextReply(ack, result);
+  });
+
+  socket.on('maptext:remove', (payload, ack) => {
+    if (socket.data.role !== 'gm') return;
+    const result = gameState.removeMapText((payload || {}).id);
+    if (result.ok) broadcastState();
+    mapTextReply(ack, result);
+  });
+
   // Игрок вставил картинку (Ctrl+V) — она не попадает на карту, пока ГМ не
   // примет. Только вошедший игрок с персонажем (наблюдатель предлагать не может).
   // Если ГМ сейчас не подключён, предложение ждёт в очереди (до IMAGE_PROPOSAL_TTL_MS).

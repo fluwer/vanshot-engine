@@ -136,6 +136,13 @@ function createMapController({ canvas, role, myCharacterId }) {
   // Камера: x/y — мировая точка (px при zoom=1) в центре экрана; zoom — масштаб.
   const camera = { x: 0, y: 0, zoom: 1.4 };
   let cameraInitialized = false;
+  // Плавный полёт камеры к своему герою (игрок: кнопка «К герою», пробел): { startedAt, from: { x, y }, duration } | null.
+  // Шаг делает animLoop — единый rAF-цикл карты; любой ввод пользователя (панорама, колесо, щипок) и смена локации полёт отменяют.
+  let cameraTween = null;
+  // Видно ли героя на экране и в какую сторону он (для плавающей кнопки «К герою»): fn({ visible, angle }), угол в градусах
+  // от направления «вправо» по часовой, шаг 15°. Зовётся только при смене (heroViewKey), а не каждый кадр.
+  let heroViewHandler = null;
+  let heroViewKey = '';
 
   // Персистентность камеры (позиция + зум) в localStorage — ключ разный для
   // ГМ и игрока, чтобы не путать позиции при тестировании обеих ролей в одном
@@ -228,6 +235,122 @@ function createMapController({ canvas, role, myCharacterId }) {
   // Режим правки картинок активен: у ГМ — всегда при imageEdit, у игрока — только после входа.
   const imageEditActive = () => imageEdit && (role === 'gm' || !!myCharacterId);
   const handleHitRadius = () => (IMAGE_HANDLE_RADIUS * (lastPointerType === 'mouse' ? 1 : TOUCH_HANDLE_FACTOR)) / camera.zoom;
+
+  // --- Текстовые заметки ГМа на карте (только ГМ: в state игрока их нет, см. getPublicState) ----------------------
+  // «Заметки для самих картинок»: текст на тёмной плашке поверх картинок/тумана/рисунков, но под фишками. Размер — в
+  // мировых px (заметка лежит на карте и масштабируется вместе с ней), цвет — ключ токена темы (THEME[color]).
+  // Режим «Текст» (пункт Dock) включает textEdit: клик выбирает и тащит, двойной клик по пустому — новая, по заметке — правка.
+  const MAP_TEXT_FONT = { s: 11, m: 16, l: 24 };     // кегль, мировые px (клетка — 16): S мельче клетки, M ≈ клетка, L в полтора раза
+  const MAP_TEXT_WRAP = { s: 180, m: 260, l: 400 };  // ширина текста, после которой строка переносится
+  let textEdit = false;
+  let selectedMapTextId = null;
+  let mapTextSelectHandler = null;   // fn(id | null) — выбор на канвасе → панель
+  let mapTextUpdateHandler = null;   // fn({ id, x, y }) — по отпусканию перетаскивания
+  let mapTextActionHandler = null;   // fn({ action: 'add' | 'edit' | 'remove', id?, x?, y? }) — жесты и клавиши → панель
+  let textDragging = null;           // { id, offsetX, offsetY, moved }
+  const textLayouts = new Map();     // id → { key, lines, px, w, h }: раскладка не зависит от зума, считаем только при правке
+  const textEditActive = () => textEdit && role === 'gm';
+
+  // Перенос строки по ширине maxW (по словам; слово шире строки режется по символам). ctx.font уже выставлен.
+  function wrapParagraph(para, maxW) {
+    const out = [];
+    let line = '';
+    para.split(' ').forEach((word) => {
+      const trial = line ? `${line} ${word}` : word;
+      if (ctx.measureText(trial).width <= maxW) { line = trial; return; }
+      if (line) out.push(line);
+      let chunk = '';
+      for (const ch of word) {
+        if (chunk && ctx.measureText(chunk + ch).width > maxW) { out.push(chunk); chunk = ch; } else chunk += ch;
+      }
+      line = chunk;
+    });
+    out.push(line);
+    return out;
+  }
+
+  // Раскладка заметки: строки, габарит плашки (w, h — мировые px). Кэш по тексту, размеру и шрифту темы.
+  function mapTextLayout(t) {
+    const px = MAP_TEXT_FONT[t.size] || MAP_TEXT_FONT.m;
+    const key = `${t.text}|${px}|${THEME.font}`;
+    const cached = textLayouts.get(t.id);
+    if (cached && cached.key === key) return cached;
+    ctx.save();
+    ctx.font = `600 ${px}px ${THEME.font}`;
+    const maxW = MAP_TEXT_WRAP[t.size] || MAP_TEXT_WRAP.m;
+    const lines = [];
+    t.text.split('\n').forEach((para) => wrapParagraph(para, maxW).forEach((l) => lines.push(l)));
+    const textW = Math.max(...lines.map((l) => ctx.measureText(l).width), px);
+    ctx.restore();
+    const padX = px * 0.6;
+    const padY = px * 0.42;
+    const layout = { key, lines, px, lineH: px * 1.3, padX, padY, w: textW + padX * 2, h: lines.length * px * 1.3 + padY * 2 };
+    textLayouts.set(t.id, layout);
+    return layout;
+  }
+
+  // Прямоугольник заметки в мировых px (x/y в записи — центр плашки).
+  function mapTextRect(t) {
+    const L = mapTextLayout(t);
+    return { x: t.x - L.w / 2, y: t.y - L.h / 2, w: L.w, h: L.h };
+  }
+
+  // Заметка под мировой точкой (верхняя — последняя в массиве), с небольшим допуском на зуме.
+  function findMapTextAt(wx, wy) {
+    const list = (currentState && currentState.mapTexts) || [];
+    const tol = 3 / camera.zoom;
+    for (let i = list.length - 1; i >= 0; i--) {
+      const r = mapTextRect(list[i]);
+      if (wx >= r.x - tol && wx <= r.x + r.w + tol && wy >= r.y - tol && wy <= r.y + r.h + tol) return list[i];
+    }
+    return null;
+  }
+
+  function selectMapText(id) {
+    const next = id || null;
+    if (next === selectedMapTextId) return;
+    selectedMapTextId = next;
+    draw();
+    if (mapTextSelectHandler) mapTextSelectHandler(selectedMapTextId);
+  }
+
+  // Слой заметок в draw(): плашка (фон темы, рамка цвета заметки) и текст; выбранная — янтарная пунктирная рамка.
+  function drawMapTexts() {
+    const list = role === 'gm' && currentState && currentState.mapTexts;
+    if (!list || !list.length) return;
+    const z = camera.zoom;
+    list.forEach((t) => {
+      const L = mapTextLayout(t);
+      const x = t.x - L.w / 2;
+      const y = t.y - L.h / 2;
+      const color = THEME[t.color] || THEME.text;
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(x, y, L.w, L.h, L.px * 0.3);
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = THEME.surface;
+      ctx.fill();
+      ctx.globalAlpha = 0.7;
+      ctx.lineWidth = Math.max(1 / z, L.px * 0.06);
+      ctx.strokeStyle = color;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.font = `600 ${L.px}px ${THEME.font}`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = color;
+      L.lines.forEach((line, i) => ctx.fillText(line, x + L.padX, y + L.padY + i * L.lineH + (L.lineH - L.px) / 2));
+      if (t.id === selectedMapTextId) {
+        ctx.beginPath();
+        ctx.roundRect(x - 3 / z, y - 3 / z, L.w + 6 / z, L.h + 6 / z, L.px * 0.3 + 3 / z);
+        ctx.setLineDash([6 / z, 4 / z]);
+        ctx.lineWidth = 2 / z;
+        ctx.strokeStyle = THEME.amber;
+        ctx.stroke();
+      }
+      ctx.restore();
+    });
+  }
 
   // Видимая часть картинки. К общему масштабу scale добавлены необязательные поля (у старых картинок их нет):
   // stretchX/stretchY — растяжение по одной оси, crop { l, t, r, b } — доли натурального размера, обрезанные
@@ -509,6 +632,17 @@ function createMapController({ canvas, role, myCharacterId }) {
   }
   document.addEventListener('keydown', onImageKeydown, true);
 
+  // Горячая клавиша выбранной заметки: Delete/Backspace — удалить. keysBlocked: в поле текста панели (там заметку правят),
+  // при модалке и заставке клавиша заметку не трогает.
+  function onTextKeydown(e) {
+    if (!textEditActive() || !selectedMapTextId || keysBlocked(e)) return;
+    if ((e.key === 'Delete' || e.key === 'Backspace') && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      if (mapTextActionHandler) mapTextActionHandler({ action: 'remove', id: selectedMapTextId });
+    }
+  }
+  document.addEventListener('keydown', onTextKeydown, true);
+
   // --- Рисование (панель рисования) ---------------------------------------
   // drawMode — как fogEdit/imageEdit, перехватывает жест целиком, но доступен
   // ОБЕИМ ролям (не только ГМ). Цвет фиксирован на клиента: у ГМ — белый,
@@ -623,8 +757,9 @@ function createMapController({ canvas, role, myCharacterId }) {
     });
     strikes.forEach((at, key) => { if (now - at >= STRIKE_FLASH_MS) strikes.delete(key); });
     pendingKnocks.forEach((p, key) => { if (now > p.until) pendingKnocks.delete(key); });
+    stepCameraTween(now); // полёт камеры к герою — в том же кадре, что и остальная анимация
     draw();
-    animRafId = (activeEffects.length || walkFx.length || tokenAnims.size)
+    animRafId = (activeEffects.length || walkFx.length || tokenAnims.size || cameraTween)
       ? requestAnimationFrame(animLoop)
       : null;
   }
@@ -1438,18 +1573,83 @@ function createMapController({ canvas, role, myCharacterId }) {
     }
   }
 
-  // Телепорт камеры к своему персонажу (игрок жмёт пробел). Берём актуальную
-  // позицию из currentState — initCamera() центрирует только один раз при старте.
+  // Телепорт камеры к своему персонажу. Берём актуальную позицию из currentState — initCamera() центрирует только один
+  // раз при старте. Мгновенный вариант: им пользуется flyToMyCharacter при reduced-motion и в фоновой вкладке.
   function centerOnMyCharacter() {
-    if (!currentState || !currentState.map || role !== 'player' || !myCharacterId) return;
-    const targetChar = currentState.characters.find((c) => c.id === myCharacterId);
-    if (!targetChar || !targetChar.position) return;
-    const layout = currentState.map;
-    camera.x = (targetChar.position.x + 0.5) * layout.cellSize;
-    camera.y = (targetChar.position.y + 0.5) * layout.cellSize + 20;
+    const target = myHeroTarget();
+    if (!target) return;
+    cameraTween = null;
+    camera.x = target.x;
+    camera.y = target.y;
     clampCamera();
     draw();
     saveCameraDebounced();
+  }
+
+  // Мировая точка героя игрока (центр клетки, сдвиг сетки 20 px) или null (не игрок, нет героя/позиции).
+  function myHeroTarget() {
+    if (!currentState || !currentState.map || role !== 'player' || !myCharacterId) return null;
+    const c = currentState.characters.find((ch) => ch.id === myCharacterId);
+    if (!c || !c.position) return null;
+    const cs = currentState.map.cellSize;
+    return { x: (c.position.x + 0.5) * cs, y: (c.position.y + 0.5) * cs + 20 };
+  }
+
+  // Плавный возврат камеры к герою (кнопка «К герою» и пробел). Зум не меняем. Цель пересчитывается каждый кадр
+  // (stepCameraTween), поэтому, если герой идёт во время полёта, камера приходит ровно в него. Длительность растёт с
+  // расстоянием (450…900 мс). reduced-motion и фоновая вкладка — мгновенно, как раньше.
+  function flyToMyCharacter() {
+    const target = myHeroTarget();
+    if (!target) return;
+    if (document.hidden || (reduceMotionQuery && reduceMotionQuery.matches)) { centerOnMyCharacter(); return; }
+    const dist = Math.hypot(target.x - camera.x, target.y - camera.y) * camera.zoom; // экранные px
+    if (dist < 2) { centerOnMyCharacter(); return; }
+    cameraTween = { startedAt: performance.now(), from: { x: camera.x, y: camera.y }, duration: clamp(380 + dist * 0.3, 450, 900) };
+    notifyHeroView(); // пока камера летит, кнопка скрыта
+    startAnimLoop();
+  }
+
+  // Шаг полёта (зовёт animLoop перед draw): ease-in-out от точки старта к ТЕКУЩЕЙ позиции героя.
+  function stepCameraTween(now) {
+    if (!cameraTween) return;
+    const target = myHeroTarget();
+    if (!target) { cameraTween = null; return; }
+    const t = Math.min(1, (now - cameraTween.startedAt) / cameraTween.duration);
+    const k = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    camera.x = cameraTween.from.x + (target.x - cameraTween.from.x) * k;
+    camera.y = cameraTween.from.y + (target.y - cameraTween.from.y) * k;
+    clampCamera();
+    if (t >= 1) {
+      cameraTween = null;
+      saveCameraDebounced();
+    }
+  }
+
+  // Ввод пользователя или смена сцены обрывают полёт на месте (камера остаётся там, где была).
+  function cancelCameraTween() {
+    if (!cameraTween) return;
+    cameraTween = null;
+    notifyHeroView();
+  }
+
+  // Видно ли героя на экране (фишка ближе HERO_VIEW_MARGIN к краю холста — «не видно») и куда он: для кнопки «К герою».
+  // Вызывается из draw() (дёшево: одна проверка точки); обработчик зовётся только при смене видимости или направления.
+  const HERO_VIEW_MARGIN = 24;
+  function notifyHeroView() {
+    if (role !== 'player' || !heroViewHandler) return;
+    const target = myHeroTarget();
+    let visible = true;
+    let angle = 0;
+    if (target && !cameraTween) {
+      const sx = (target.x - camera.x) * camera.zoom + canvas.width / 2;
+      const sy = (target.y - camera.y) * camera.zoom + canvas.height / 2;
+      visible = sx >= HERO_VIEW_MARGIN && sx <= canvas.width - HERO_VIEW_MARGIN && sy >= HERO_VIEW_MARGIN && sy <= canvas.height - HERO_VIEW_MARGIN;
+      if (!visible) angle = Math.round((Math.atan2(sy - canvas.height / 2, sx - canvas.width / 2) * 180) / Math.PI / 15) * 15;
+    }
+    const key = visible ? 'v' : `h${angle}`;
+    if (key === heroViewKey) return;
+    heroViewKey = key;
+    heroViewHandler({ visible, angle });
   }
 
   // Карта бесконечная, но камеру не отпускаем в пустоту (там легко потеряться):
@@ -1496,7 +1696,7 @@ function createMapController({ canvas, role, myCharacterId }) {
       const me = state.characters.find((c) => c.id === myCharacterId);
       if (me && me.color) drawColor = me.color;
     }
-    if (locationChanged) cameraInitialized = false;
+    if (locationChanged) { cameraInitialized = false; cameraTween = null; }
     // Линия линейки привязана к клеткам прежней локации — на новой она бессмысленна.
     if (locationChanged && ruler) {
       ruler = null;
@@ -1514,6 +1714,19 @@ function createMapController({ canvas, role, myCharacterId }) {
       imageGesture = null;
       leaveCropMode();
       if (mapImageSelectHandler) mapImageSelectHandler(null);
+    }
+    // Заметки ГМа: выбранная пропала (удалена) или сцена сменилась — снимаем выбор и жест; кэш раскладки чистим от ушедших.
+    if (role === 'gm') {
+      const texts = state.mapTexts || [];
+      if (selectedMapTextId && (locationChanged || !texts.some((t) => t.id === selectedMapTextId))) {
+        selectedMapTextId = null;
+        textDragging = null;
+        if (mapTextSelectHandler) mapTextSelectHandler(null);
+      }
+      if (textLayouts.size > texts.length) {
+        const ids = new Set(texts.map((t) => t.id));
+        textLayouts.forEach((_, id) => { if (!ids.has(id)) textLayouts.delete(id); });
+      }
     }
     // Выбор ГМ не должен «висеть»: при смене локации и когда выбранного
     // персонажа/NPC уже удалили — иначе следующий тап шлёт ход несуществующему.
@@ -1640,6 +1853,8 @@ function createMapController({ canvas, role, myCharacterId }) {
 
     if (role === 'gm' && fogEdit) return 'crosshair';
 
+    if (textEditActive()) return findMapTextAt(world.x, world.y) ? 'grab' : 'default';
+
     if (imageEditActive()) {
       if (findRotateHandleAt(world.x, world.y)) return 'crosshair'; // приближение, нет родного "rotate"
       const handleHit = findImageResizeHandleAt(world.x, world.y);
@@ -1683,7 +1898,7 @@ function createMapController({ canvas, role, myCharacterId }) {
   let hoverCellKey = null; // 'x,y' клетки под курсором, для которой хук уже вызван (чтобы не звать его на каждый пиксель)
   let hoverSuppressed = false; // после нажатия окошко не возвращается, пока курсор не уйдёт в другую клетку
 
-  const tokenHoverBlocked = () => role !== 'gm' || !tokenHoverHandler || fogEdit || imageEditActive() || drawMode
+  const tokenHoverBlocked = () => role !== 'gm' || !tokenHoverHandler || fogEdit || textEditActive() || imageEditActive() || drawMode
     || !!vfxPlaceMode || rulerMode || lastPointerType !== 'mouse';
 
   // Экранный (client) прямоугольник клетки — окошко ставится рядом с ней.
@@ -1872,6 +2087,7 @@ function createMapController({ canvas, role, myCharacterId }) {
 
   canvas.addEventListener('pointerdown', (e) => {
     canvas.setPointerCapture(e.pointerId);
+    cancelCameraTween(); // пользователь взялся за карту — полёт к герою обрывается на месте
     activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     lastPointerType = e.pointerType || 'mouse'; // от него зависит зона попадания по ручкам картинки
     suppressTokenHover();
@@ -1888,6 +2104,20 @@ function createMapController({ canvas, role, myCharacterId }) {
         } else {
           const w = screenToWorld(pt.x, pt.y);
           fogSelection = { x0: w.x, y0: w.y, x1: w.x, y1: w.y };
+        }
+        return;
+      }
+      // Режим «Текст» (ГМ): клик выбирает заметку и берёт её для перетаскивания, клик мимо снимает выбор. Жест целиком
+      // принадлежит режиму — тапом по клетке (ходом фишки) он не станет.
+      if (textEditActive() && (!isMouse || e.button === 0)) {
+        suppressTap = true;
+        const pt = eventToCanvasPoint(e);
+        const world = screenToWorld(pt.x, pt.y);
+        const hit = findMapTextAt(world.x, world.y);
+        selectMapText(hit ? hit.id : null);
+        if (hit) {
+          textDragging = { id: hit.id, offsetX: world.x - hit.x, offsetY: world.y - hit.y, moved: false };
+          canvas.style.cursor = 'grabbing';
         }
         return;
       }
@@ -2040,6 +2270,19 @@ function createMapController({ canvas, role, myCharacterId }) {
       return;
     }
 
+    if (textDragging) {
+      const pt = eventToCanvasPoint(e);
+      const world = screenToWorld(pt.x, pt.y);
+      const t = currentState && currentState.mapTexts && currentState.mapTexts.find((mt) => mt.id === textDragging.id);
+      if (t) {
+        t.x = world.x - textDragging.offsetX;
+        t.y = world.y - textDragging.offsetY;
+        textDragging.moved = true;
+        draw();
+      }
+      return;
+    }
+
     if (imageDragging) {
       const pt = eventToCanvasPoint(e);
       const world = screenToWorld(pt.x, pt.y);
@@ -2139,6 +2382,16 @@ function createMapController({ canvas, role, myCharacterId }) {
     // Линейка: отпустили — линия остаётся; дальше обычный путь (suppressTap, поставленный
     // в pointerdown, не даёт превратить жест в тап по клетке).
     rulerDragging = false;
+    if (textDragging) {
+      const drag = textDragging;
+      const t = currentState && currentState.mapTexts && currentState.mapTexts.find((mt) => mt.id === drag.id);
+      textDragging = null;
+      activePointers.delete(e.pointerId);
+      if (t && drag.moved && mapTextUpdateHandler) mapTextUpdateHandler({ id: t.id, x: t.x, y: t.y });
+      draw();
+      canvas.style.cursor = cursorForHover(pt.x, pt.y);
+      return;
+    }
     if (imageDragging) {
       const m = currentState && currentState.mapImages && currentState.mapImages.find((mi) => mi.id === imageDragging.id);
       imageDragging = null;
@@ -2232,8 +2485,19 @@ function createMapController({ canvas, role, myCharacterId }) {
   // ПКМ используется для панорамирования — гасим системное контекстное меню.
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
+  // Режим «Текст»: двойной клик по пустому месту — новая заметка в этой точке, по заметке — правка её текста (панель).
+  canvas.addEventListener('dblclick', (e) => {
+    if (!textEditActive() || !mapTextActionHandler || e.button !== 0) return;
+    const pt = eventToCanvasPoint(e);
+    const world = screenToWorld(pt.x, pt.y);
+    const hit = findMapTextAt(world.x, world.y);
+    if (hit) mapTextActionHandler({ action: 'edit', id: hit.id });
+    else mapTextActionHandler({ action: 'add', x: world.x, y: world.y });
+  });
+
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
+    cancelCameraTween();
     clearTokenHover(); // камера уедет из-под курсора — окошко с заметками устарело
     if ((e.ctrlKey || e.metaKey) && toolWheel(e)) return;
     const pt = eventToCanvasPoint(e);
@@ -2448,6 +2712,9 @@ function createMapController({ canvas, role, myCharacterId }) {
       ctx.stroke();
       ctx.restore();
     }
+
+    // Текстовые заметки ГМа — поверх картинок, тумана и рисунков, но под следами и фишками (только ГМ).
+    drawMapTexts();
 
     // Следы ходьбы — над туманом, под токенами (см. drawWalkFx).
     drawWalkFx();
@@ -2756,6 +3023,7 @@ function createMapController({ canvas, role, myCharacterId }) {
     }
 
     ctx.restore();
+    notifyHeroView(); // видно ли героя на экране — для плавающей кнопки «К герою» (только игрок)
     if (perfOn) {
       pmark('tokens'); // рисунки, следы, токены, линейка, рамки
       perfDrawMs = perfDrawMs * 0.9 + (performance.now() - pm0) * 0.1;
@@ -2799,12 +3067,16 @@ function createMapController({ canvas, role, myCharacterId }) {
     applyFogBlob,
     setFogChangeHandler: (fn) => { fogChangeHandler = fn; },
     centerOnMyCharacter,
+    // Плавный возврат к герою (кнопка «К герою», пробел), идёт ли полёт сейчас и хук видимости героя для кнопки.
+    flyToMyCharacter,
+    isCameraFlying: () => !!cameraTween,
+    setHeroViewHandler: (fn) => { heroViewHandler = fn; heroViewKey = ''; notifyHeroView(); },
     getCameraCenter: () => ({ x: camera.x, y: camera.y }),
     // Центрирует камеру на мировой точке (x,y) — например, на позиции
     // картинки на карте (m.x/m.y уже учитывают масштаб/поворот: это центр
     // отрисованного прямоугольника, см. блок currentState.mapImages.forEach
     // в draw()). Зум не меняем — только сдвигаем камеру.
-    centerCameraOn: (x, y) => { camera.x = x; camera.y = y; clampCamera(); draw(); saveCameraDebounced(); },
+    centerCameraOn: (x, y) => { cameraTween = null; camera.x = x; camera.y = y; clampCamera(); draw(); saveCameraDebounced(); },
     // У игрока выбор токена (selectedTarget — его персонаж) НЕ сбрасываем: без него тап-ход
     // не работает; режим правки у игрока касается только его собственных картинок.
     setImageEditMode: (v) => { imageEdit = !!v; if (imageEdit && role === 'gm') clearSelection(); if (!imageEdit) { imageDragging = null; imageResizing = null; imageRotating = null; imageGesture = null; leaveCropMode(); selectedMapImageId = null; if (mapImageSelectHandler) mapImageSelectHandler(null); } draw(); if (lastHoverPoint) canvas.style.cursor = cursorForHover(lastHoverPoint.x, lastHoverPoint.y); },
@@ -2828,6 +3100,25 @@ function createMapController({ canvas, role, myCharacterId }) {
       if (id !== prev && mapImageSelectHandler) mapImageSelectHandler(selectedMapImageId);
     },
     setMapImageActionHandler: (fn) => { mapImageActionHandler = fn; },
+    // Текстовые заметки ГМа: режим ведёт блок «Текст» левой панели (MapTextPanel.vue); выбор — тем же колбэком, что и клик по карте.
+    setTextEditMode: (v) => {
+      textEdit = !!v;
+      if (textEdit && role === 'gm') clearSelection();
+      if (!textEdit) { textDragging = null; selectMapText(null); }
+      draw();
+      if (lastHoverPoint) canvas.style.cursor = cursorForHover(lastHoverPoint.x, lastHoverPoint.y);
+    },
+    selectMapText,
+    getSelectedMapTextId: () => selectedMapTextId,
+    setMapTextSelectHandler: (fn) => { mapTextSelectHandler = fn; },
+    setMapTextUpdateHandler: (fn) => { mapTextUpdateHandler = fn; },
+    setMapTextActionHandler: (fn) => { mapTextActionHandler = fn; },
+    // Для проверок: габарит плашки в мировых px ({ x, y, w, h }) и число заметок.
+    getTextRect: (id) => {
+      const t = currentState && currentState.mapTexts && currentState.mapTexts.find((mt) => mt.id === id);
+      return t ? mapTextRect(t) : null;
+    },
+    getTextCount: () => ((currentState && currentState.mapTexts) || []).length,
     setImageCropMode,
     isImageCropMode: () => imageCropMode,
     getSelectedMapImageId: () => selectedMapImageId,

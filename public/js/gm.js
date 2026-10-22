@@ -100,6 +100,12 @@ mapController.setMapImageActionHandler(({ action, id }) => {
   else if (action === 'remove') window.imageTools.removeImage(socket, id);
 });
 
+// ---- Текстовые заметки на карте (только ГМ; пункт «Текст», панель — MapTextPanel.vue) ----
+// Выбор на канвасе → панель; конец перетаскивания → сервер (x, y); двойной клик и Delete → панель (handleAction).
+mapController.setMapTextSelectHandler((id) => window.mapTextPanelApp?.setSelected(id));
+mapController.setMapTextUpdateHandler((patch) => socket.emit('maptext:update', patch));
+mapController.setMapTextActionHandler((action) => window.mapTextPanelApp?.handleAction(action));
+
 // ---- Рисование на карте ----
 mapController.setDrawAddHandler((stroke) => socket.emit('drawing:add', stroke));
 mapController.setDrawEraseHandler((id) => socket.emit('drawing:erase', { id }));
@@ -151,6 +157,7 @@ Dock.init({
     { id: 'fog', icon: 'cloud-fog', label: 'Туман', title: 'Туман войны', block: 'maptools-panel', group: 0 },
     { id: 'draw', icon: 'pencil', label: 'Рисунок', title: 'Рисование', block: 'maptools-panel', group: 0 },
     { id: 'images', icon: 'image', label: 'Картинки', title: 'Картинки на карте', block: 'maptools-panel', group: 0 },
+    { id: 'text', icon: 'type', label: 'Текст', title: 'Заметки на карте (видите только вы)', block: 'maptext-panel', group: 0 },
     { id: 'vfx', icon: 'sparkles', label: 'Эффекты', title: 'Спецэффекты', block: 'effects-panel', group: 0 },
     { id: 'ruler', icon: 'ruler', label: 'Линейка', title: 'Линейка', block: 'ruler-panel', group: 0 },
     { id: 'locations', icon: 'map', label: 'Локации', title: 'Локации', block: 'maptools-panel', group: 1 },
@@ -191,6 +198,7 @@ socket.on('state', (state) => {
   renderChat(state.chat);
   window.combatPanelApp?.updateState(state.combat, state.characters, state.npcs, state.activeLocationId);
   window.mapToolsPanelApp?.updateState(state.mapImages || [], state.locations || [], state.activeLocationId);
+  window.mapTextPanelApp?.updateState(state.mapTexts || []);
   applyMusicState(state.music);
   mapController.updateState(state);
   requestReachable();

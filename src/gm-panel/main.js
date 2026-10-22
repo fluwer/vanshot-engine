@@ -12,6 +12,7 @@ import LocationBadge from './LocationBadge.vue';
 import ImageProposals from './ImageProposals.vue';
 import CombatStrip from './CombatStrip.vue';
 import RulerPanel from './RulerPanel.vue';
+import MapTextPanel from './MapTextPanel.vue';
 import ViewPanel from './ViewPanel.vue';
 import GameSettingsPanel from './GameSettingsPanel.vue';
 import VideoPanel from './VideoPanel.vue';
@@ -114,6 +115,23 @@ window.mapToolsPanelApp = {
     mapToolsStore.mapImages = mapImages;
     mapToolsStore.locations = locations || [];
     mapToolsStore.activeLocationId = activeLocationId;
+  },
+};
+
+// ---- Текстовые заметки на карте (пункт «Текст»; режим ведёт сама панель по dock:change) ----
+// Данные — state.mapTexts (только у ГМ, заметки открытой локации); выбор приходит с канваса (map.js → gm.js → setSelected),
+// жесты канваса (двойной клик, Delete) — в handleAction панели.
+const mapTextStore = reactive({ texts: [], selectedId: null });
+const mapTextPanel = createApp(MapTextPanel, { store: mapTextStore, bridge }).mount('#maptext-panel-vue-root');
+window.mapTextPanelApp = {
+  updateState(texts) {
+    mapTextStore.texts = texts || [];
+  },
+  setSelected(id) {
+    mapTextStore.selectedId = id || null;
+  },
+  handleAction(action) {
+    mapTextPanel.handleAction(action);
   },
 };
 
